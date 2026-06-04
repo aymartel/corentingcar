@@ -12,6 +12,7 @@ import {
   createFuelSchema,
   createWashSchema,
 } from '../controllers/expenses.controller.js';
+import { resetController, resetSchema } from '../controllers/admin.controller.js';
 import { authRouter } from './auth.routes.js';
 import { priorityRouter } from './priority.routes.js';
 import { handoverRouter } from './handover.routes.js';
@@ -40,3 +41,6 @@ apiRouter.post('/fuel', requireAuth, validate(createFuelSchema), createFuelContr
 apiRouter.post('/washes', requireAuth, validate(createWashSchema), createWashController);
 apiRouter.get('/expenses', requireAuth, getExpensesController);
 apiRouter.use('/requests', requireAuth, requestsRouter);
+
+// Admin (destructivo): requiere sesión + contraseña de administrador.
+apiRouter.post('/admin/reset', requireAuth, validate(resetSchema), resetController);

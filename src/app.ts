@@ -21,6 +21,11 @@ function isOriginAllowed(origin: string | undefined): boolean {
 export function buildApp() {
   const app = express();
 
+  // La API es dinámica y autenticada: nada de ETag/304 ni caché en el cliente.
+  // (Express añade ETag por defecto y el navegador revalida → 304 con cuerpo
+  //  vacío rompía la app web.)
+  app.disable('etag');
+
   app.use(express.json());
   app.use(
     cors({
@@ -45,6 +50,11 @@ export function buildApp() {
     swaggerUi.setup(openapiDocument, { customSiteTitle: 'CoRetingCar API' }),
   );
 
+  // Respuestas de datos no cacheables (refuerza la desactivación de ETag).
+  app.use('/api', (_req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    next();
+  });
   app.use('/api', apiRouter);
 
   // 404 y manejador de errores global SIEMPRE al final.

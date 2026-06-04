@@ -41,6 +41,7 @@ export const openapiDocument = {
     { name: 'Kilómetros' },
     { name: 'Gastos' },
     { name: 'Solicitudes' },
+    { name: 'Admin' },
   ],
   security: bearer,
   components: {
@@ -121,6 +122,14 @@ export const openapiDocument = {
         properties: {
           useDate: { type: 'string', format: 'date', example: '2026-06-10' },
           message: { type: 'string', example: 'Tengo médico' },
+        },
+      },
+      ResetRequest: {
+        type: 'object',
+        required: ['initialKm', 'password'],
+        properties: {
+          initialKm: { type: 'integer', example: 45000, description: 'Odómetro al recibir el coche (km)' },
+          password: { type: 'string', example: 'Pass4admin', description: 'Contraseña de administrador' },
         },
       },
     },
@@ -363,6 +372,26 @@ export const openapiDocument = {
         summary: 'Cancelar (solo el solicitante, si pending)',
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
         responses: { '200': { description: 'Cancelada' }, '403': errorResponse, '409': errorResponse },
+      },
+    },
+    '/api/admin/reset': {
+      post: {
+        tags: ['Admin'],
+        summary: '⚠️ Resetear TODOS los datos y fijar el odómetro inicial',
+        description:
+          'Borra cesiones, solicitudes, usos, gasolina y lavados; deja un uso base de 0 km con ' +
+          '`initialKm` (odómetro al recibir el coche). Conserva usuarios y reglas. Requiere token de ' +
+          'sesión **y** la contraseña de administrador.',
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/ResetRequest' } } },
+        },
+        responses: {
+          '200': { description: 'Datos reseteados' },
+          '400': errorResponse,
+          '401': errorResponse,
+          '403': errorResponse,
+        },
       },
     },
   },
