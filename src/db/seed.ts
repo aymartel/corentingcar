@@ -9,8 +9,8 @@ import { hashPin } from '../utils/pin.js';
  * por defecto en producción.
  */
 const SEED_USERS = [
-  { name: 'Andy', profile: 'andy', pin: process.env.ANDY_PIN ?? '1234', color: '#1E88E5' },
-  { name: 'Amigo', profile: 'amigo', pin: process.env.AMIGO_PIN ?? '5678', color: '#43A047' },
+  { name: 'Andy', profile: 'andy', pin: process.env.ANDY_PIN ?? '1234', color: '#9CC93B' },
+  { name: 'Dennis', profile: 'amigo', pin: process.env.AMIGO_PIN ?? '5678', color: '#FF8A3D' },
 ] as const;
 
 /** Fecha ancla de la alternancia de prioridad (configurable). */
@@ -71,9 +71,27 @@ export function seed(database: typeof db = db): void {
   runSeed();
 }
 
+/**
+ * Reconcilia el **nombre** y el **color** de los usuarios con los valores de
+ * `SEED_USERS` (fuente única). Idempotente y seguro en cada arranque: NO toca
+ * `pin_hash` (el PIN se mantiene). Permite que cambios de nombre/color del seed
+ * se apliquen a una BD ya existente en el siguiente despliegue.
+ */
+export function reconcileSeedUsers(database: typeof db = db): void {
+  const update = database.prepare(
+    `UPDATE users SET name = @name, color = @color WHERE profile = @profile`,
+  );
+  const run = database.transaction(() => {
+    for (const user of SEED_USERS) {
+      update.run({ name: user.name, color: user.color, profile: user.profile });
+    }
+  });
+  run();
+}
+
 // Ejecutable directamente: `pnpm db:seed`.
 const entry = process.argv[1];
 if (entry && import.meta.url === pathToFileURL(entry).href) {
   seed();
-  console.log('✅ Seed aplicado (usuarios Andy/Amigo + configuración rules).');
+  console.log('✅ Seed aplicado (usuarios Andy/Dennis + configuración rules).');
 }

@@ -1,12 +1,14 @@
 import { pathToFileURL } from 'node:url';
 import { db } from './connection.js';
 import { migrate } from './migrate.js';
-import { seed } from './seed.js';
+import { reconcileSeedUsers, seed } from './seed.js';
 
 /**
  * Deja la base de datos lista para arrancar el servidor:
  *  - ejecuta la migración (idempotente, segura en cada arranque),
- *  - aplica el seed SOLO si la BD está vacía (no duplica usuarios ni pisa PIN existentes).
+ *  - aplica el seed SOLO si la BD está vacía (no duplica usuarios ni pisa PIN existentes),
+ *  - reconcilia nombre/color de los usuarios con el seed en cada arranque (sin tocar el PIN),
+ *    para que cambios de nombre/color se apliquen al re-desplegar sobre una BD existente.
  * Pensado para correr en el arranque del contenedor/servicio (ver index.ts y B9).
  */
 export function ensureDatabaseReady(database: typeof db = db): void {
@@ -16,10 +18,12 @@ export function ensureDatabaseReady(database: typeof db = db): void {
   };
   if (count === 0) {
     seed(database);
-    console.log('🌱 Base de datos vacía: seed inicial aplicado (Andy/Amigo + rules).');
+    console.log('🌱 Base de datos vacía: seed inicial aplicado (Andy/Dennis + rules).');
   } else {
     console.log(`✔ Base de datos lista (${count} usuarios).`);
   }
+  // Aplica cambios de nombre/color del seed a una BD ya existente (idempotente).
+  reconcileSeedUsers(database);
 }
 
 // Ejecutable directamente: `pnpm db:bootstrap`.
