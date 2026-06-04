@@ -4,12 +4,8 @@ name: Deploy app (EC2)
 # (API + Caddy/HTTPS). Requiere que la infraestructura ya exista (workflow Infra) y los secrets.
 on:
   push:
-    branches: [main]
-    paths:
-      - 'backend/**'
-      - 'deploy/**'
-      - '.github/workflows/deploy.yml'
-  workflow_dispatch:
+    branches: [main] # cada push a main despliega automáticamente
+  workflow_dispatch: # ...o lánzalo a mano desde la pestaña Actions
 
 permissions:
   contents: read
