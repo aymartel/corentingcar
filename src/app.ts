@@ -1,7 +1,9 @@
 import express from 'express';
 import cors from 'cors';
+import swaggerUi from 'swagger-ui-express';
 import { env } from './config/env.js';
 import { apiRouter } from './routes/index.js';
+import { openapiDocument } from './docs/openapi.js';
 import { notFound } from './middlewares/not-found.js';
 import { errorHandler } from './middlewares/error-handler.js';
 
@@ -31,6 +33,16 @@ export function buildApp() {
       },
       credentials: true,
     }),
+  );
+
+  // Documentación de la API (pública): Swagger UI + el OpenAPI en JSON.
+  app.get('/api/openapi.json', (_req, res) => {
+    res.json(openapiDocument);
+  });
+  app.use(
+    '/api/docs',
+    swaggerUi.serve,
+    swaggerUi.setup(openapiDocument, { customSiteTitle: 'CoRetingCar API' }),
   );
 
   app.use('/api', apiRouter);
