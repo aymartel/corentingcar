@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
+    "db:bootstrap": "tsx src/db/bootstrap.ts",
     "db:set-pin": "tsx src/db/set-pin.ts",
     "test": "vitest run --passWithNoTests"
   },

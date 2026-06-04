@@ -1,7 +1,29 @@
-node_modules
-dist
+# Node
+node_modules/
+dist/
+coverage/
+*.log
+
+# Env / secretos (NUNCA versionar)
+.env
+.env.*
+!.env.example
+*.pem
+
+# Clave privada SSH del EC2 (la pública SÍ se versiona)
+infra/keys/coretingcar_ec2
+infra/keys/*_ec2
+infra/keys/id_*
+
+# SQLite
 *.db
 *.db-*
-.env
 data/
-coverage/
+
+# Terraform
+infra/**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log

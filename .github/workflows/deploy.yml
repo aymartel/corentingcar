@@ -1,0 +1,71 @@
+name: Deploy app (EC2)
+
+# Construye la imagen del backend, la envía al EC2 por SSH y la levanta con Docker Compose
+# (API + Caddy/HTTPS). Requiere que la infraestructura ya exista (workflow Infra) y los secrets.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'deploy/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Construir imagen Docker
+        run: docker build -t coretingcar-backend:latest .
+
+      - name: Empaquetar imagen
+        run: docker save coretingcar-backend:latest | gzip > image.tar.gz
+
+      - name: Copiar artefactos al EC2 (SCP)
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "image.tar.gz,deploy/docker-compose.yml,deploy/Caddyfile,deploy/deploy.sh"
+          target: /home/ec2-user/coretingcar
+
+      - name: Desplegar (SSH)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 15m
+          envs: API_DOMAIN,CORS_ORIGINS,SESSION_TOKEN_SECRET,ANDY_PIN,AMIGO_PIN,ANCHOR_DATE
+          script: |
+            set -euo pipefail
+            cd /home/ec2-user/coretingcar
+            mv -f deploy/docker-compose.yml deploy/Caddyfile deploy/deploy.sh ./
+            rmdir deploy 2>/dev/null || true
+            chmod +x deploy.sh
+            cat > .env <<EOF
+            NODE_ENV=production
+            PORT=3000
+            DATABASE_PATH=/data/coche.db
+            API_DOMAIN=${API_DOMAIN}
+            BASE_URL=https://${API_DOMAIN}
+            CORS_ORIGINS=${CORS_ORIGINS}
+            SESSION_TOKEN_SECRET=${SESSION_TOKEN_SECRET}
+            ANDY_PIN=${ANDY_PIN}
+            AMIGO_PIN=${AMIGO_PIN}
+            ANCHOR_DATE=${ANCHOR_DATE}
+            EOF
+            ./deploy.sh
+        env:
+          API_DOMAIN: ${{ secrets.API_DOMAIN }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS || '*' }}
+          SESSION_TOKEN_SECRET: ${{ secrets.SESSION_TOKEN_SECRET }}
+          ANDY_PIN: ${{ secrets.ANDY_PIN || '1234' }}
+          AMIGO_PIN: ${{ secrets.AMIGO_PIN || '5678' }}
+          ANCHOR_DATE: ${{ secrets.ANCHOR_DATE || '2025-01-01' }}

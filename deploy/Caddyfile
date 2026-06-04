@@ -1,0 +1,7 @@
+# Caddy obtiene y renueva el certificado HTTPS (Let's Encrypt) automáticamente para
+# {$API_DOMAIN}, siempre que el DNS A de ese dominio apunte a la IP del servidor y los
+# puertos 80/443 estén abiertos. Hace de reverse proxy hacia el contenedor `api`.
+{$API_DOMAIN} {
+	encode gzip
+	reverse_proxy api:3000
+}

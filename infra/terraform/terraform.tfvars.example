@@ -1,0 +1,6 @@
+# Copia a terraform.tfvars (gitignored) si quieres sobreescribir valores por defecto.
+aws_region = "eu-west-1"
+
+# RECOMENDADO por seguridad: restringe el SSH a tu IP pública.
+# ssh_cidr = "TU_IP_PUBLICA/32"
+ssh_cidr = "0.0.0.0/0"

@@ -1,0 +1,29 @@
+# Se ejecuta EN el EC2 (en /home/ec2-user/coretingcar). La imagen `coretingcar-backend`
+# se carga con `docker load` desde el workflow (no se construye en el servidor).
+services:
+  api:
+    image: coretingcar-backend:latest
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/data # SQLite persiste aquí (sobrevive a redeploys del contenedor)
+    expose:
+      - "3000" # solo accesible internamente; Caddy hace de proxy
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    env_file: .env # necesita API_DOMAIN
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # certificados Let's Encrypt (persisten)
+      - caddy_config:/config
+    depends_on:
+      - api
+
+volumes:
+  caddy_data:
+  caddy_config:

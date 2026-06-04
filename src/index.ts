@@ -1,5 +1,9 @@
 import { buildApp } from './app.js';
 import { env } from './config/env.js';
+import { ensureDatabaseReady } from './db/bootstrap.js';
+
+// Deja la BD lista en el arranque (migración idempotente + seed solo si está vacía).
+ensureDatabaseReady();
 
 const app = buildApp();
 
