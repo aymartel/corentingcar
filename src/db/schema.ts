@@ -7,7 +7,7 @@ export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS users (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   name        TEXT NOT NULL UNIQUE,
-  profile     TEXT NOT NULL UNIQUE CHECK (profile IN ('andy','amigo')),
+  profile     TEXT NOT NULL UNIQUE CHECK (profile IN ('andy','dennis')),
   pin_hash    TEXT NOT NULL,
   color       TEXT,
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS car_status_events (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id     INTEGER NOT NULL REFERENCES users(id),
   status      TEXT NOT NULL CHECK (status IN ('free','taken')),
-  parking     TEXT CHECK (parking IN ('andy','amigo')),
+  parking     TEXT CHECK (parking IN ('andy','dennis')),
   note        TEXT,
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );

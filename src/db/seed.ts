@@ -10,7 +10,7 @@ import { hashPin } from '../utils/pin.js';
  */
 const SEED_USERS = [
   { name: 'Andy', profile: 'andy', pin: process.env.ANDY_PIN ?? '1234', color: '#9CC93B' },
-  { name: 'Dennis', profile: 'amigo', pin: process.env.AMIGO_PIN ?? '5678', color: '#FF8A3D' },
+  { name: 'Dennis', profile: 'dennis', pin: process.env.DENNIS_PIN ?? '5678', color: '#FF8A3D' },
 ] as const;
 
 /** Fecha ancla de la alternancia de prioridad (configurable). */
@@ -43,11 +43,11 @@ export function seed(database: typeof db = db): void {
     const andy = database.prepare(`SELECT id FROM users WHERE profile = 'andy'`).get() as
       | UserIdRow
       | undefined;
-    const amigo = database.prepare(`SELECT id FROM users WHERE profile = 'amigo'`).get() as
+    const dennis = database.prepare(`SELECT id FROM users WHERE profile = 'dennis'`).get() as
       | UserIdRow
       | undefined;
-    if (!andy || !amigo) {
-      throw new Error('No se pudieron sembrar los usuarios (andy/amigo).');
+    if (!andy || !dennis) {
+      throw new Error('No se pudieron sembrar los usuarios (andy/dennis).');
     }
 
     database

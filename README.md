@@ -44,12 +44,12 @@ La ruta del archivo la define `DATABASE_PATH` (por defecto `./data/coche.db`).
 ### Usuarios y PIN (sin registro)
 Los 2 usuarios se crean por **seed** y el PIN se guarda **hasheado** (scrypt), nunca en claro. Los PIN
 por defecto del seed (`Andy=1234`, `Dennis=5678`) pueden fijarse con variables de entorno antes de
-sembrar (`ANDY_PIN`, `AMIGO_PIN`) y la fecha ancla con `ANCHOR_DATE`.
+sembrar (`ANDY_PIN`, `DENNIS_PIN`) y la fecha ancla con `ANCHOR_DATE`.
 
 Para **cambiar un PIN** más adelante, directamente en la base de datos:
 ```bash
 pnpm db:set-pin andy 4321     # actualiza el pin_hash del perfil 'andy'
-pnpm db:set-pin amigo 8765
+pnpm db:set-pin dennis 8765
 ```
 No existe pantalla ni endpoint de registro: el alta y el cambio de PIN se gestionan con estos scripts.
 

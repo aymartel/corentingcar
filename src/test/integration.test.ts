@@ -12,7 +12,7 @@ import { seed } from '../db/seed.js';
 let server: Server;
 let base: string;
 let andyToken: string;
-let amigoToken: string;
+let dennisToken: string;
 
 interface ApiResult {
   status: number;
@@ -60,7 +60,7 @@ beforeAll(async () => {
 
   // Tokens capturados ANTES de cualquier prueba de rate-limit.
   andyToken = await login('andy', '1234');
-  amigoToken = await login('amigo', '5678');
+  dennisToken = await login('dennis', '5678');
 });
 
 afterAll(async () => {
@@ -70,7 +70,7 @@ afterAll(async () => {
 describe('auth', () => {
   it('login con PIN correcto devuelve token + user', () => {
     expect(andyToken).toMatch(/^[a-f0-9]+$/);
-    expect(amigoToken).toMatch(/^[a-f0-9]+$/);
+    expect(dennisToken).toMatch(/^[a-f0-9]+$/);
   });
 
   it('login con PIN incorrecto → 401', async () => {
@@ -90,7 +90,7 @@ describe('prioridad', () => {
   it('GET /api/priority/today devuelve la persona con prioridad y la frase', async () => {
     const r = await api('GET', '/api/priority/today', { token: andyToken });
     expect(r.status).toBe(200);
-    expect(data(r).priorityUser.profile).toMatch(/andy|amigo/);
+    expect(data(r).priorityUser.profile).toMatch(/andy|dennis/);
     expect(typeof data(r).conflictPhrase).toBe('string');
     expect(typeof data(r).isMyDay).toBe('boolean');
   });
@@ -99,7 +99,7 @@ describe('prioridad', () => {
     const a = await api('GET', '/api/priority?date=2025-01-01', { token: andyToken });
     const b = await api('GET', '/api/priority?date=2025-01-02', { token: andyToken });
     expect(data(a).priorityUser.profile).toBe('andy');
-    expect(data(b).priorityUser.profile).toBe('amigo');
+    expect(data(b).priorityUser.profile).toBe('dennis');
   });
 });
 
@@ -117,7 +117,7 @@ describe('kilómetros', () => {
     const m = await api('GET', '/api/mileage', { token: andyToken });
     const byProfile = Object.fromEntries(data(m).perUser.map((u: any) => [u.user.profile, u.usedKm]));
     expect(byProfile.andy).toBe(150); // 100 individual + 50 (mitad de 100 compartido)
-    expect(byProfile.amigo).toBe(50);
+    expect(byProfile.dennis).toBe(50);
     expect(data(m).sharedKm).toBe(100);
 
     // Odómetro inconsistente: startKm por debajo del último end_km.
@@ -146,7 +146,7 @@ describe('solicitudes (pending → accepted) y efecto en prioridad', () => {
     });
     expect(created.status).toBe(201);
     expect(data(created).status).toBe('pending');
-    expect(data(created).recipient.profile).toBe('amigo');
+    expect(data(created).recipient.profile).toBe('dennis');
     const id = data(created).id as number;
 
     // Duplicada → 409.
@@ -162,13 +162,13 @@ describe('solicitudes (pending → accepted) y efecto en prioridad', () => {
     expect(code(forbidden)).toBe('FORBIDDEN');
 
     // Pendientes dirigidas a Dennis = 1, a Andy = 0.
-    const pendDennis = await api('GET', '/api/requests/pending', { token: amigoToken });
+    const pendDennis = await api('GET', '/api/requests/pending', { token: dennisToken });
     const pendAndy = await api('GET', '/api/requests/pending', { token: andyToken });
     expect(data(pendDennis)).toHaveLength(1);
     expect(data(pendAndy)).toHaveLength(0);
 
     // Dennis acepta → accepted y crea el handover.
-    const accepted = await api('PATCH', `/api/requests/${id}/accept`, { token: amigoToken });
+    const accepted = await api('PATCH', `/api/requests/${id}/accept`, { token: dennisToken });
     expect(accepted.status).toBe(200);
     expect(data(accepted).status).toBe('accepted');
 
@@ -177,7 +177,7 @@ describe('solicitudes (pending → accepted) y efecto en prioridad', () => {
     expect(data(prio).source).toBe('handover');
 
     // Aceptar de nuevo → transición inválida.
-    const again = await api('PATCH', `/api/requests/${id}/accept`, { token: amigoToken });
+    const again = await api('PATCH', `/api/requests/${id}/accept`, { token: dennisToken });
     expect(again.status).toBe(409);
     expect(code(again)).toBe('INVALID_TRANSITION');
   });
@@ -190,7 +190,7 @@ describe('gastos: gasolina (balance) y lavado (alternancia)', () => {
       body: { date: '2026-01-10', amountEur: 60, type: 'shared' },
     });
     const exp1 = await api('GET', '/api/expenses', { token: andyToken });
-    expect(data(exp1).fuel.balance.fromUser.profile).toBe('amigo'); // Dennis debe...
+    expect(data(exp1).fuel.balance.fromUser.profile).toBe('dennis'); // Dennis debe...
     expect(data(exp1).fuel.balance.toUser.profile).toBe('andy'); // ...a Andy
     expect(data(exp1).fuel.balance.amountEur).toBe(30);
 
@@ -201,7 +201,7 @@ describe('gastos: gasolina (balance) y lavado (alternancia)', () => {
     await api('POST', '/api/washes', { token: andyToken, body: { date: '2026-01-11', costEur: 12 } });
     const exp2 = await api('GET', '/api/expenses', { token: andyToken });
     expect(data(exp2).wash.last.user.profile).toBe('andy');
-    expect(data(exp2).wash.nextWashUser.profile).toBe('amigo');
+    expect(data(exp2).wash.nextWashUser.profile).toBe('dennis');
   });
 });
 
@@ -225,12 +225,12 @@ describe('validación', () => {
   });
 });
 
-// Debe ir AL FINAL: contamina el rate-limit del perfil 'amigo' (cuyo token ya está capturado).
+// Debe ir AL FINAL: contamina el rate-limit del perfil 'dennis' (cuyo token ya está capturado).
 describe('rate-limit de login', () => {
   it('tras 5 intentos fallidos, el 6º responde 429', async () => {
     const statuses: number[] = [];
     for (let i = 0; i < 6; i += 1) {
-      const r = await api('POST', '/api/auth/login', { body: { profile: 'amigo', pin: '0000' } });
+      const r = await api('POST', '/api/auth/login', { body: { profile: 'dennis', pin: '0000' } });
       statuses.push(r.status);
     }
     expect(statuses.slice(0, 5)).toEqual([401, 401, 401, 401, 401]);

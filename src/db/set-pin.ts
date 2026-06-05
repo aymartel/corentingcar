@@ -3,13 +3,13 @@ import { hashPin } from '../utils/pin.js';
 
 /**
  * Cambia el PIN de un usuario directamente en la base de datos (sin endpoint de registro).
- * Uso:  pnpm db:set-pin <andy|amigo> <nuevo-pin>
+ * Uso:  pnpm db:set-pin <andy|dennis> <nuevo-pin>
  */
 const profile = process.argv[2];
 const pin = process.argv[3];
 
 if (!profile || !pin) {
-  console.error('Uso: pnpm db:set-pin <andy|amigo> <nuevo-pin>');
+  console.error('Uso: pnpm db:set-pin <andy|dennis> <nuevo-pin>');
   process.exit(1);
 }
 

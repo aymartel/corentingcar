@@ -26,7 +26,7 @@ Cloudflare ─► A: api.corentingcar.uk → Elastic IP (DNS only)
 | `API_DOMAIN` | `api.corentingcar.uk` |
 | `SESSION_TOKEN_SECRET` | Secreto largo aleatorio (**obligatorio**) |
 | `CORS_ORIGINS` | (opcional, por defecto `*`) |
-| `ANDY_PIN` / `AMIGO_PIN` | (opcional `1234`/`5678`; solo en el 1er seed) |
+| `ANDY_PIN` / `DENNIS_PIN` | (opcional `1234`/`5678`; solo en el 1er seed) |
 | `ANCHOR_DATE` | (opcional, por defecto `2025-01-01`) |
 
 > ⚠️ Las claves de CoBaby deben tener permisos para crear **EC2/VPC/EIP/S3**. Si el workflow Infra

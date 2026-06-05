@@ -1,5 +1,5 @@
 /** Perfil de usuario (estable). */
-export type Profile = 'andy' | 'amigo';
+export type Profile = 'andy' | 'dennis';
 
 /** Fila `users` tal cual en la base de datos (incluye `pin_hash`, uso interno). */
 export interface UserRow {

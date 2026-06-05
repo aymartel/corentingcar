@@ -68,7 +68,7 @@ export const openapiDocument = {
         properties: {
           id: { type: 'integer', example: 1 },
           name: { type: 'string', example: 'Andy' },
-          profile: { type: 'string', enum: ['andy', 'amigo'], example: 'andy' },
+          profile: { type: 'string', enum: ['andy', 'dennis'], example: 'andy' },
           color: { type: 'string', nullable: true, example: '#1E88E5' },
         },
       },
@@ -76,7 +76,7 @@ export const openapiDocument = {
         type: 'object',
         required: ['profile', 'pin'],
         properties: {
-          profile: { type: 'string', enum: ['andy', 'amigo'], example: 'andy' },
+          profile: { type: 'string', enum: ['andy', 'dennis'], example: 'andy' },
           pin: { type: 'string', example: '1234' },
         },
       },
@@ -139,8 +139,8 @@ export const openapiDocument = {
           status: { type: 'string', enum: ['free', 'taken'], example: 'free' },
           parking: {
             type: 'string',
-            enum: ['andy', 'amigo'],
-            example: 'amigo',
+            enum: ['andy', 'dennis'],
+            example: 'dennis',
             description: 'En casa de qué persona se dejó aparcado (al dejarlo libre)',
           },
           note: { type: 'string', maxLength: 200, example: 'Plaza 12' },

@@ -38,7 +38,7 @@ jobs:
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           command_timeout: 15m
-          envs: API_DOMAIN,CORS_ORIGINS,SESSION_TOKEN_SECRET,ANDY_PIN,AMIGO_PIN,ANCHOR_DATE
+          envs: API_DOMAIN,CORS_ORIGINS,SESSION_TOKEN_SECRET,ANDY_PIN,DENNIS_PIN,ANCHOR_DATE
           script: |
             set -euo pipefail
             cd /home/ec2-user/coretingcar
@@ -54,7 +54,7 @@ jobs:
             CORS_ORIGINS=${CORS_ORIGINS}
             SESSION_TOKEN_SECRET=${SESSION_TOKEN_SECRET}
             ANDY_PIN=${ANDY_PIN}
-            AMIGO_PIN=${AMIGO_PIN}
+            DENNIS_PIN=${DENNIS_PIN}
             ANCHOR_DATE=${ANCHOR_DATE}
             EOF
             ./deploy.sh
@@ -63,5 +63,5 @@ jobs:
           CORS_ORIGINS: ${{ secrets.CORS_ORIGINS || '*' }}
           SESSION_TOKEN_SECRET: ${{ secrets.SESSION_TOKEN_SECRET }}
           ANDY_PIN: ${{ secrets.ANDY_PIN || '1234' }}
-          AMIGO_PIN: ${{ secrets.AMIGO_PIN || '5678' }}
+          DENNIS_PIN: ${{ secrets.DENNIS_PIN || '5678' }}
           ANCHOR_DATE: ${{ secrets.ANCHOR_DATE || '2025-01-01' }}
