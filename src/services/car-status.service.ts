@@ -1,4 +1,5 @@
 import { db } from '../db/connection.js';
+import { AppError } from '../utils/app-error.js';
 import { findUserById, findUserByProfile, toUserDto } from './users.service.js';
 import type {
   CarStatusEventRow,
@@ -43,6 +44,18 @@ export function setCarStatus(
   userId: number,
   input: { status: CarAvailability; parking?: ParkingSpot; note?: string },
 ): CarStatusDto {
+  // No se puede coger el coche si ya lo tiene la OTRA persona: hay que esperar a
+  // que lo deje libre (evita que ambos lo tengan a la vez).
+  if (input.status === 'taken') {
+    const current = getCarStatus();
+    if (current.status === 'taken' && current.user && current.user.id !== userId) {
+      throw new AppError(
+        'CONFLICT',
+        'El coche ya lo tiene la otra persona; espera a que lo deje libre.',
+        409,
+      );
+    }
+  }
   db.prepare(
     'INSERT INTO car_status_events (user_id, status, parking, note) VALUES (?, ?, ?, ?)',
   ).run(userId, input.status, input.parking ?? null, input.note ?? null);
