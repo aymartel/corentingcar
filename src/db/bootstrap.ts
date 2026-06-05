@@ -1,7 +1,12 @@
 import { pathToFileURL } from 'node:url';
 import { db } from './connection.js';
 import { migrate } from './migrate.js';
-import { migrateLegacyProfiles, reconcileSeedUsers, seed } from './seed.js';
+import {
+  migrateCarStatusParking,
+  migrateLegacyProfiles,
+  reconcileSeedUsers,
+  seed,
+} from './seed.js';
 
 /**
  * Deja la base de datos lista para arrancar el servidor:
@@ -16,6 +21,8 @@ export function ensureDatabaseReady(database: typeof db = db): void {
   // Renombra perfiles legacy andy/amigo → user1/user2 en BD ya existentes
   // (idempotente; no hace nada si ya están migrados o la BD está vacía).
   migrateLegacyProfiles(database);
+  // Amplía el parqueo a 'other' (descripción libre) en BD ya existentes (idempotente).
+  migrateCarStatusParking(database);
   const { count } = database.prepare('SELECT COUNT(*) AS count FROM users').get() as {
     count: number;
   };

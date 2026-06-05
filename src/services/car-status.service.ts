@@ -23,7 +23,11 @@ export function getCarStatus(): CarStatusDto {
   }
 
   const user = findUserById(row.user_id);
-  const parkingUser = row.parking ? findUserByProfile(row.parking) : undefined;
+  // 'other' no corresponde a ninguna persona → sin parkingUser (la ubicación va en `note`).
+  const parkingUser =
+    row.parking === 'user1' || row.parking === 'user2'
+      ? findUserByProfile(row.parking)
+      : undefined;
   return {
     status: row.status,
     user: user ? toUserDto(user) : null,

@@ -5,12 +5,18 @@ import { AppError } from '../utils/app-error.js';
 import { getCarStatus, setCarStatus } from '../services/car-status.service.js';
 
 /** Cuerpo de POST /api/car-status. */
-export const setCarStatusSchema = z.object({
-  status: z.enum(['free', 'taken']),
-  // En casa de qué persona se dejó aparcado (los 2 parqueos fijos).
-  parking: z.enum(['user1', 'user2']).optional(),
-  note: z.string().trim().max(200).optional(),
-});
+export const setCarStatusSchema = z
+  .object({
+    status: z.enum(['free', 'taken']),
+    // Parqueo: en casa de cada persona (user1/user2) u "otro" (con descripción).
+    parking: z.enum(['user1', 'user2', 'other']).optional(),
+    note: z.string().trim().max(200).optional(),
+  })
+  // Si el parqueo es "otro", la descripción (note) es obligatoria.
+  .refine((b) => b.parking !== 'other' || !!b.note, {
+    message: 'Indica una descripcion cuando el parqueo es "otro".',
+    path: ['note'],
+  });
 
 type SetCarStatusBody = z.infer<typeof setCarStatusSchema>;
 

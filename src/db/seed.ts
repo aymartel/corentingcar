@@ -133,6 +133,43 @@ export function migrateLegacyProfiles(database: typeof db = db): void {
   }
 }
 
+/**
+ * Migración **idempotente** del CHECK de `car_status_events.parking` para admitir
+ * el parqueo `'other'` (descripción libre). Como SQLite no permite alterar un
+ * CHECK in situ, **reconstruye** la tabla conservando los eventos. No hace nada si
+ * el CHECK ya incluye `'other'` (o la tabla no existe).
+ */
+export function migrateCarStatusParking(database: typeof db = db): void {
+  const row = database
+    .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'car_status_events'`)
+    .get() as { sql: string } | undefined;
+  if (!row || row.sql.includes("'other'")) return; // ya soporta 'other' o no existe
+
+  database.pragma('foreign_keys = OFF');
+  try {
+    const rebuild = database.transaction(() => {
+      database.exec(`
+        CREATE TABLE car_status_events_new (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id     INTEGER NOT NULL REFERENCES users(id),
+          status      TEXT NOT NULL CHECK (status IN ('free','taken')),
+          parking     TEXT CHECK (parking IN ('user1','user2','other')),
+          note        TEXT,
+          created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO car_status_events_new (id, user_id, status, parking, note, created_at)
+          SELECT id, user_id, status, parking, note, created_at FROM car_status_events;
+        DROP TABLE car_status_events;
+        ALTER TABLE car_status_events_new RENAME TO car_status_events;
+        CREATE INDEX IF NOT EXISTS idx_car_status_created ON car_status_events(id);
+      `);
+    });
+    rebuild();
+  } finally {
+    database.pragma('foreign_keys = ON');
+  }
+}
+
 // Ejecutable directamente: `pnpm db:seed`.
 const entry = process.argv[1];
 if (entry && import.meta.url === pathToFileURL(entry).href) {

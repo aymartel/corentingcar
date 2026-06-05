@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS car_status_events (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id     INTEGER NOT NULL REFERENCES users(id),
   status      TEXT NOT NULL CHECK (status IN ('free','taken')),
-  parking     TEXT CHECK (parking IN ('user1','user2')),
+  parking     TEXT CHECK (parking IN ('user1','user2','other')),
   note        TEXT,
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );

@@ -3,8 +3,8 @@ import type { UserDto, Profile } from './user.js';
 /** Disponibilidad del coche en tiempo real. */
 export type CarAvailability = 'free' | 'taken';
 
-/** Parqueo = en casa de qué persona se dejó (los 2 parqueos fijos). */
-export type ParkingSpot = Profile; // 'user1' | 'user2'
+/** Parqueo = en casa de qué persona (user1/user2) u "otro" (con descripción en `note`). */
+export type ParkingSpot = Profile | 'other'; // 'user1' | 'user2' | 'other'
 
 /** Fila `car_status_events` tal cual en la base de datos. */
 export interface CarStatusEventRow {
