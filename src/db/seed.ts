@@ -9,8 +9,8 @@ import { hashPin } from '../utils/pin.js';
  * por defecto en producción.
  */
 const SEED_USERS = [
-  { name: 'Andy', profile: 'andy', pin: process.env.ANDY_PIN ?? '1234', color: '#9CC93B' },
-  { name: 'Dennis', profile: 'dennis', pin: process.env.DENNIS_PIN ?? '5678', color: '#FF8A3D' },
+  { name: 'Andy', profile: 'user1', pin: process.env.USER1_PIN ?? '1234', color: '#9CC93B' },
+  { name: 'Dennis', profile: 'user2', pin: process.env.USER2_PIN ?? '5678', color: '#FF8A3D' },
 ] as const;
 
 /** Fecha ancla de la alternancia de prioridad (configurable). */
@@ -40,14 +40,14 @@ export function seed(database: typeof db = db): void {
       });
     }
 
-    const andy = database.prepare(`SELECT id FROM users WHERE profile = 'andy'`).get() as
+    const user1 = database.prepare(`SELECT id FROM users WHERE profile = 'user1'`).get() as
       | UserIdRow
       | undefined;
-    const dennis = database.prepare(`SELECT id FROM users WHERE profile = 'dennis'`).get() as
+    const user2 = database.prepare(`SELECT id FROM users WHERE profile = 'user2'`).get() as
       | UserIdRow
       | undefined;
-    if (!andy || !dennis) {
-      throw new Error('No se pudieron sembrar los usuarios (andy/dennis).');
+    if (!user1 || !user2) {
+      throw new Error('No se pudieron sembrar los usuarios (user1/user2).');
     }
 
     database
@@ -63,8 +63,8 @@ export function seed(database: typeof db = db): void {
       )
       .run({
         anchor_date: ANCHOR_DATE,
-        anchor_user_id: andy.id, // Andy tiene prioridad en la fecha ancla
-        first_wash_user_id: andy.id, // primer lavado por defecto
+        anchor_user_id: user1.id, // Andy tiene prioridad en la fecha ancla
+        first_wash_user_id: user1.id, // primer lavado por defecto
       });
   });
 

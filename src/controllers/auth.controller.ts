@@ -7,7 +7,7 @@ import { recordLoginFailure, recordLoginSuccess } from '../middlewares/rate-limi
 
 /** Esquema de validación del login (usado con `validate(...)`). */
 export const loginSchema = z.object({
-  profile: z.enum(['andy', 'dennis']),
+  profile: z.enum(['user1', 'user2']),
   pin: z.string().min(1),
 });
 

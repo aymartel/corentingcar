@@ -4,7 +4,7 @@ import type { UserDto, Profile } from './user.js';
 export type CarAvailability = 'free' | 'taken';
 
 /** Parqueo = en casa de qué persona se dejó (los 2 parqueos fijos). */
-export type ParkingSpot = Profile; // 'andy' | 'dennis'
+export type ParkingSpot = Profile; // 'user1' | 'user2'
 
 /** Fila `car_status_events` tal cual en la base de datos. */
 export interface CarStatusEventRow {
