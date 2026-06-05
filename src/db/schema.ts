@@ -94,4 +94,14 @@ CREATE TABLE IF NOT EXISTS handovers (
   request_id                  INTEGER REFERENCES requests(id),
   created_at                  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Disponibilidad en tiempo real ("¿está libre ahora?"). El estado actual = último evento.
+CREATE TABLE IF NOT EXISTS car_status_events (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id),
+  status      TEXT NOT NULL CHECK (status IN ('free','taken')),
+  note        TEXT,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_car_status_created ON car_status_events(id);
 `;

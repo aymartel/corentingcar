@@ -12,6 +12,11 @@ import {
   createFuelSchema,
   createWashSchema,
 } from '../controllers/expenses.controller.js';
+import {
+  getCarStatusController,
+  setCarStatusController,
+  setCarStatusSchema,
+} from '../controllers/car-status.controller.js';
 import { resetController, resetSchema } from '../controllers/admin.controller.js';
 import { authRouter } from './auth.routes.js';
 import { priorityRouter } from './priority.routes.js';
@@ -41,6 +46,10 @@ apiRouter.post('/fuel', requireAuth, validate(createFuelSchema), createFuelContr
 apiRouter.post('/washes', requireAuth, validate(createWashSchema), createWashController);
 apiRouter.get('/expenses', requireAuth, getExpensesController);
 apiRouter.use('/requests', requireAuth, requestsRouter);
+
+// Estado del coche en tiempo real ("¿libre ahora?").
+apiRouter.get('/car-status', requireAuth, getCarStatusController);
+apiRouter.post('/car-status', requireAuth, validate(setCarStatusSchema), setCarStatusController);
 
 // Admin (destructivo): requiere sesión + contraseña de administrador.
 apiRouter.post('/admin/reset', requireAuth, validate(resetSchema), resetController);

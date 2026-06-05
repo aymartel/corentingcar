@@ -132,6 +132,14 @@ export const openapiDocument = {
           password: { type: 'string', example: 'Pass4admin', description: 'Contraseña de administrador' },
         },
       },
+      CarStatusUpdate: {
+        type: 'object',
+        required: ['status'],
+        properties: {
+          status: { type: 'string', enum: ['free', 'taken'], example: 'taken' },
+          note: { type: 'string', maxLength: 200, example: 'Aparcado en el garaje' },
+        },
+      },
     },
   },
   paths: {
@@ -372,6 +380,26 @@ export const openapiDocument = {
         summary: 'Cancelar (solo el solicitante, si pending)',
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
         responses: { '200': { description: 'Cancelada' }, '403': errorResponse, '409': errorResponse },
+      },
+    },
+    '/api/car-status': {
+      get: {
+        tags: ['Coche'],
+        summary: 'Estado actual del coche (libre/ocupado, quién, desde cuándo, nota)',
+        responses: { '200': { description: 'Estado del coche' }, '401': errorResponse },
+      },
+      post: {
+        tags: ['Coche'],
+        summary: 'Fijar estado: "tengo el coche" (taken) / "lo dejo libre" (free)',
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/CarStatusUpdate' } } },
+        },
+        responses: {
+          '200': { description: 'Nuevo estado' },
+          '400': errorResponse,
+          '401': errorResponse,
+        },
       },
     },
     '/api/admin/reset': {
