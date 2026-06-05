@@ -93,7 +93,7 @@ flutter build apk --release --dart-define=API_URL=https://api.corentingcar.uk
 ## Persistencia
 - La BD vive en `~/coretingcar/data/coche.db` (bind mount). **Sobrevive a los redeploys** del
   contenedor; solo se perdería si se destruye/recrea la instancia (de ahí los backups).
-- En el primer arranque con BD vacía, el contenedor ejecuta migración + seed (Andy/Amigo + reglas).
+- En el primer arranque con BD vacía, el contenedor ejecuta migración + seed (Andy/Dennis + reglas).
 
 ## Destruir
 `terraform -chdir=infra/terraform destroy` (con las mismas credenciales) o un workflow de destroy.

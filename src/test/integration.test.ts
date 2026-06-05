@@ -48,7 +48,7 @@ async function login(profile: string, pin: string): Promise<string> {
 beforeAll(async () => {
   // Salvaguarda: jamás tocar la BD real.
   expect(env.DATABASE_PATH).toBe(':memory:');
-  seed(db); // migra + siembra Andy/Amigo (PIN 1234/5678) y rules (ancla 2025-01-01 = Andy)
+  seed(db); // migra + siembra Andy/Dennis (PIN 1234/5678) y rules (ancla 2025-01-01 = Andy)
 
   const app = buildApp();
   await new Promise<void>((resolve) => {
@@ -95,7 +95,7 @@ describe('prioridad', () => {
     expect(typeof data(r).isMyDay).toBe('boolean');
   });
 
-  it('alternancia: 2025-01-01 = Andy, 2025-01-02 = Amigo', async () => {
+  it('alternancia: 2025-01-01 = Andy, 2025-01-02 = Dennis', async () => {
     const a = await api('GET', '/api/priority?date=2025-01-01', { token: andyToken });
     const b = await api('GET', '/api/priority?date=2025-01-02', { token: andyToken });
     expect(data(a).priorityUser.profile).toBe('andy');
@@ -131,7 +131,7 @@ describe('kilómetros', () => {
 });
 
 describe('solicitudes (pending → accepted) y efecto en prioridad', () => {
-  it('Andy pide el día de Amigo, Amigo acepta y la prioridad efectiva cambia', async () => {
+  it('Andy pide el día de Dennis, Dennis acepta y la prioridad efectiva cambia', async () => {
     // Día propio → no permitido.
     const own = await api('POST', '/api/requests', {
       token: andyToken,
@@ -139,7 +139,7 @@ describe('solicitudes (pending → accepted) y efecto en prioridad', () => {
     });
     expect(code(own)).toBe('CANNOT_REQUEST_OWN_DAY');
 
-    // Día de Amigo → pending, recipient = Amigo.
+    // Día de Dennis → pending, recipient = Dennis.
     const created = await api('POST', '/api/requests', {
       token: andyToken,
       body: { useDate: '2025-01-02', message: 'médico' },
@@ -161,13 +161,13 @@ describe('solicitudes (pending → accepted) y efecto en prioridad', () => {
     expect(forbidden.status).toBe(403);
     expect(code(forbidden)).toBe('FORBIDDEN');
 
-    // Pendientes dirigidas a Amigo = 1, a Andy = 0.
-    const pendAmigo = await api('GET', '/api/requests/pending', { token: amigoToken });
+    // Pendientes dirigidas a Dennis = 1, a Andy = 0.
+    const pendDennis = await api('GET', '/api/requests/pending', { token: amigoToken });
     const pendAndy = await api('GET', '/api/requests/pending', { token: andyToken });
-    expect(data(pendAmigo)).toHaveLength(1);
+    expect(data(pendDennis)).toHaveLength(1);
     expect(data(pendAndy)).toHaveLength(0);
 
-    // Amigo acepta → accepted y crea el handover.
+    // Dennis acepta → accepted y crea el handover.
     const accepted = await api('PATCH', `/api/requests/${id}/accept`, { token: amigoToken });
     expect(accepted.status).toBe(200);
     expect(data(accepted).status).toBe('accepted');
@@ -190,14 +190,14 @@ describe('gastos: gasolina (balance) y lavado (alternancia)', () => {
       body: { date: '2026-01-10', amountEur: 60, type: 'shared' },
     });
     const exp1 = await api('GET', '/api/expenses', { token: andyToken });
-    expect(data(exp1).fuel.balance.fromUser.profile).toBe('amigo'); // Amigo debe...
+    expect(data(exp1).fuel.balance.fromUser.profile).toBe('amigo'); // Dennis debe...
     expect(data(exp1).fuel.balance.toUser.profile).toBe('andy'); // ...a Andy
     expect(data(exp1).fuel.balance.amountEur).toBe(30);
 
     // Sin lavados aún → próximo = first_wash (Andy).
     expect(data(exp1).wash.nextWashUser.profile).toBe('andy');
 
-    // Andy lava → próximo pasa a Amigo.
+    // Andy lava → próximo pasa a Dennis.
     await api('POST', '/api/washes', { token: andyToken, body: { date: '2026-01-11', costEur: 12 } });
     const exp2 = await api('GET', '/api/expenses', { token: andyToken });
     expect(data(exp2).wash.last.user.profile).toBe('andy');

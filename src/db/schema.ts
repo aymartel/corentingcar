@@ -96,10 +96,12 @@ CREATE TABLE IF NOT EXISTS handovers (
 );
 
 -- Disponibilidad en tiempo real ("¿está libre ahora?"). El estado actual = último evento.
+-- parking = en casa de qué persona se dejó aparcado (los 2 parqueos fijos).
 CREATE TABLE IF NOT EXISTS car_status_events (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id     INTEGER NOT NULL REFERENCES users(id),
   status      TEXT NOT NULL CHECK (status IN ('free','taken')),
+  parking     TEXT CHECK (parking IN ('andy','amigo')),
   note        TEXT,
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );

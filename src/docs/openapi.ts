@@ -23,7 +23,7 @@ export const openapiDocument = {
     title: 'CoRetingCar API',
     version: APP_VERSION,
     description:
-      'API del coche compartido (Andy y Amigo). Todas las respuestas usan el sobre ' +
+      'API del coche compartido (Andy y Dennis). Todas las respuestas usan el sobre ' +
       '`{ ok: true, data }` o `{ ok: false, error: { code, message } }`. La mayoría de ' +
       'endpoints requieren `Authorization: Bearer <token>` (consíguelo en `POST /api/auth/login` ' +
       'y pulsa **Authorize**). Distancias en km, importes en €.',
@@ -136,8 +136,14 @@ export const openapiDocument = {
         type: 'object',
         required: ['status'],
         properties: {
-          status: { type: 'string', enum: ['free', 'taken'], example: 'taken' },
-          note: { type: 'string', maxLength: 200, example: 'Aparcado en el garaje' },
+          status: { type: 'string', enum: ['free', 'taken'], example: 'free' },
+          parking: {
+            type: 'string',
+            enum: ['andy', 'amigo'],
+            example: 'amigo',
+            description: 'En casa de qué persona se dejó aparcado (al dejarlo libre)',
+          },
+          note: { type: 'string', maxLength: 200, example: 'Plaza 12' },
         },
       },
     },

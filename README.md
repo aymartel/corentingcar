@@ -1,6 +1,6 @@
 # CoRetingCar · Backend
 
-API REST para la app de coche compartido (Andy y Amigo). Stack: **Node + TypeScript + Express + SQLite**.
+API REST para la app de coche compartido (Andy y Dennis). Stack: **Node + TypeScript + Express + SQLite**.
 
 > Construido por fases. Esta es la base (**B1**); el contrato y el modelo de datos viven en
 > [`../prompts/00-context-and-contract.md`](../prompts/00-context-and-contract.md).
@@ -29,7 +29,7 @@ curl http://localhost:3000/api/health
 | `pnpm start` | Ejecuta la build (`node dist/index.js`) |
 | `pnpm typecheck` | Comprueba tipos sin emitir |
 | `pnpm db:migrate` | Crea/actualiza el esquema SQLite (idempotente) |
-| `pnpm db:seed` | Inserta los 2 usuarios (Andy/Amigo) y la configuración `rules` (idempotente) |
+| `pnpm db:seed` | Inserta los 2 usuarios (Andy/Dennis) y la configuración `rules` (idempotente) |
 | `pnpm db:set-pin <perfil> <pin>` | Cambia el PIN de un usuario directamente en la BD |
 | `pnpm test` | Tests (vitest) — se completan en la fase B8 |
 
@@ -37,13 +37,13 @@ curl http://localhost:3000/api/health
 Crea e inicializa la base de datos:
 ```bash
 pnpm db:migrate    # crea el esquema (8 tablas)
-pnpm db:seed       # inserta Andy/Amigo + rules (no duplica si ya existen)
+pnpm db:seed       # inserta Andy/Dennis + rules (no duplica si ya existen)
 ```
 La ruta del archivo la define `DATABASE_PATH` (por defecto `./data/coche.db`).
 
 ### Usuarios y PIN (sin registro)
 Los 2 usuarios se crean por **seed** y el PIN se guarda **hasheado** (scrypt), nunca en claro. Los PIN
-por defecto del seed (`Andy=1234`, `Amigo=5678`) pueden fijarse con variables de entorno antes de
+por defecto del seed (`Andy=1234`, `Dennis=5678`) pueden fijarse con variables de entorno antes de
 sembrar (`ANDY_PIN`, `AMIGO_PIN`) y la fecha ancla con `ANCHOR_DATE`.
 
 Para **cambiar un PIN** más adelante, directamente en la base de datos:

@@ -7,6 +7,8 @@ import { getCarStatus, setCarStatus } from '../services/car-status.service.js';
 /** Cuerpo de POST /api/car-status. */
 export const setCarStatusSchema = z.object({
   status: z.enum(['free', 'taken']),
+  // En casa de qué persona se dejó aparcado (los 2 parqueos fijos).
+  parking: z.enum(['andy', 'amigo']).optional(),
   note: z.string().trim().max(200).optional(),
 });
 

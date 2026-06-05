@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { computeFuelBalance, nextWashUserId, round2 } from './expenses.core.js';
 
 const A = 1; // Andy
-const B = 2; // Amigo
+const B = 2; // Dennis
 
 describe('computeFuelBalance', () => {
   it('gasolina compartida: el otro debe la mitad a quien pagó', () => {
