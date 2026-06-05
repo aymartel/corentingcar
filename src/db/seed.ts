@@ -89,6 +89,50 @@ export function reconcileSeedUsers(database: typeof db = db): void {
   run();
 }
 
+/**
+ * Migración de datos **idempotente**: en una BD sembrada con los perfiles
+ * antiguos `andy`/`amigo` (antes de adoptar slugs genéricos), los remapea a
+ * `user1`/`user2` conservando id, `pin_hash`, nombre, color y fechas. Tras esto,
+ * login con `user1`/`user2` y el PIN intacto.
+ *
+ * La columna `profile` lleva un `CHECK (profile IN (...))`; como SQLite no permite
+ * alterar un CHECK in situ, se **reconstruye** la tabla `users` (crear nueva →
+ * copiar con el mapeo → borrar vieja → renombrar). No hace nada si no hay perfiles
+ * legacy (BD ya migrada o recién sembrada).
+ */
+export function migrateLegacyProfiles(database: typeof db = db): void {
+  const { c } = database
+    .prepare(`SELECT COUNT(*) AS c FROM users WHERE profile IN ('andy', 'amigo')`)
+    .get() as { c: number };
+  if (c === 0) return; // ya migrada o sin datos legacy
+
+  database.pragma('foreign_keys = OFF');
+  try {
+    const rebuild = database.transaction(() => {
+      database.exec(`
+        CREATE TABLE users_new (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          name        TEXT NOT NULL UNIQUE,
+          profile     TEXT NOT NULL UNIQUE CHECK (profile IN ('user1','user2')),
+          pin_hash    TEXT NOT NULL,
+          color       TEXT,
+          created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO users_new (id, name, profile, pin_hash, color, created_at)
+        SELECT id, name,
+          CASE profile WHEN 'andy' THEN 'user1' WHEN 'amigo' THEN 'user2' ELSE profile END,
+          pin_hash, color, created_at
+        FROM users;
+        DROP TABLE users;
+        ALTER TABLE users_new RENAME TO users;
+      `);
+    });
+    rebuild();
+  } finally {
+    database.pragma('foreign_keys = ON');
+  }
+}
+
 // Ejecutable directamente: `pnpm db:seed`.
 const entry = process.argv[1];
 if (entry && import.meta.url === pathToFileURL(entry).href) {
