@@ -1,9 +1,9 @@
-import type { FuelType } from '../models/fuel.js';
+import type { EntryType } from '../models/entry-type.js';
 
 /**
  * Cálculo PURO de gastos (importes en €).
- *  - Gasolina individual: la paga entera quien repostó.
- *  - Gasolina compartida: se divide 50/50 (el otro debe la mitad a quien pagó).
+ *  - Gasto individual: lo asume entero quien pagó.
+ *  - Gasto compartido: se divide 50/50 (el otro debe la mitad a quien pagó).
  *  - Lavado: alterna uno cada uno; el próximo se deriva del último registrado.
  */
 
@@ -12,13 +12,13 @@ export function round2(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-export interface FuelEntryInput {
+export interface BalanceEntry {
   userId: number;
   amountEur: number;
-  type: FuelType;
+  type: EntryType;
 }
 
-export interface FuelBalance {
+export interface Balance {
   /** Total pagado de su bolsillo por cada usuario. */
   totalPerUser: { userId: number; totalEur: number }[];
   /** ¿Está saldada la cuenta? */
@@ -32,15 +32,16 @@ export interface FuelBalance {
 }
 
 /**
- * Balance de gasolina entre los 2 usuarios. Para cada persona compara lo que PAGÓ con lo
- * que le CORRESPONDE asumir (su parte): individual la asume entera quien pagó; compartida se
- * reparte 50/50. La diferencia indica quién debe a quién.
+ * Balance de gastos compartibles (gasolina + otros) entre los 2 usuarios. Para cada persona
+ * compara lo que PAGÓ con lo que le CORRESPONDE asumir (su parte): individual la asume entera
+ * quien pagó; compartida se reparte 50/50. La diferencia indica quién debe a quién. La función
+ * es agnóstica a la fuente: acepta entradas de cualquier tabla de gasto.
  */
-export function computeFuelBalance(
-  entries: FuelEntryInput[],
+export function computeBalance(
+  entries: BalanceEntry[],
   userAId: number,
   userBId: number,
-): FuelBalance {
+): Balance {
   let paidA = 0;
   let paidB = 0;
   let shareA = 0;

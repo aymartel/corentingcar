@@ -2,9 +2,11 @@ import { db } from '../db/connection.js';
 import { AppError } from '../utils/app-error.js';
 import { getRules } from './rules.service.js';
 import { listUsers } from './users.service.js';
-import { computeFuelBalance, nextWashUserId, round2 } from './expenses.core.js';
+import { computeBalance, nextWashUserId, round2 } from './expenses.core.js';
+import type { EntryType } from '../models/entry-type.js';
 import type { FuelRow, FuelDto, FuelType } from '../models/fuel.js';
 import type { WashRow, WashDto } from '../models/wash.js';
+import type { OtherExpenseRow, OtherExpenseDto } from '../models/other-expense.js';
 import type { UserDto } from '../models/user.js';
 
 function toFuelDto(row: FuelRow): FuelDto {
@@ -14,6 +16,18 @@ function toFuelDto(row: FuelRow): FuelDto {
     date: row.date,
     amountEur: round2(row.amount_eur),
     type: row.type,
+    createdAt: row.created_at,
+  };
+}
+
+function toOtherExpenseDto(row: OtherExpenseRow): OtherExpenseDto {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    date: row.date,
+    amountEur: round2(row.amount_eur),
+    type: row.type,
+    description: row.description,
     createdAt: row.created_at,
   };
 }
@@ -61,15 +75,47 @@ export function createWash(
   return toWashDto(row);
 }
 
+/** Registra un "otro gasto" (peaje, líquido, etc.) asociado a quien lo pagó. */
+export function createOtherExpense(
+  userId: number,
+  input: { date: string; amountEur: number; type: EntryType; description: string },
+): OtherExpenseDto {
+  const result = db
+    .prepare(
+      `INSERT INTO other_expense_logs (user_id, date, amount_eur, type, description)
+       VALUES (@userId, @date, @amountEur, @type, @description)`,
+    )
+    .run({
+      userId,
+      date: input.date,
+      amountEur: round2(input.amountEur),
+      type: input.type,
+      description: input.description,
+    });
+  const row = db
+    .prepare('SELECT * FROM other_expense_logs WHERE id = ?')
+    .get(result.lastInsertRowid) as OtherExpenseRow;
+  return toOtherExpenseDto(row);
+}
+
 type FuelEntryDto = FuelDto & { user: UserDto };
 type WashEntryDto = WashDto & { user: UserDto };
+type OtherExpenseEntryDto = OtherExpenseDto & { user: UserDto };
+type BalanceDto = { settled: boolean; fromUser: UserDto | null; toUser: UserDto | null; amountEur: number };
 
 export interface ExpensesSummary {
   fuel: {
     list: FuelEntryDto[];
     totalPerUser: { user: UserDto; totalEur: number }[];
-    balance: { settled: boolean; fromUser: UserDto | null; toUser: UserDto | null; amountEur: number };
+    /** @deprecated Alias del `balance` combinado top-level (gasolina + otros). Para clientes antiguos. */
+    balance: BalanceDto;
   };
+  other: {
+    list: OtherExpenseEntryDto[];
+    totalPerUser: { user: UserDto; totalEur: number }[];
+  };
+  /** Saldo combinado (gasolina + otros) entre los 2 usuarios. */
+  balance: BalanceDto;
   wash: {
     last: WashEntryDto | null;
     nextWashUser: UserDto;
@@ -77,7 +123,7 @@ export interface ExpensesSummary {
   };
 }
 
-/** Resumen de gastos: balance de gasolina + último/próximo lavado + historiales. */
+/** Resumen de gastos: balance combinado (gasolina + otros) + último/próximo lavado + historiales. */
 export function getExpenses(): ExpensesSummary {
   const rules = getRules();
   const users = listUsers();
@@ -88,28 +134,37 @@ export function getExpenses(): ExpensesSummary {
   }
   const usersById = new Map(users.map((u) => [u.id, u]));
 
+  const totalsWithUser = (raw: { userId: number; totalEur: number }[]): { user: UserDto; totalEur: number }[] =>
+    raw.map((t) => ({ user: requireUser(usersById, t.userId), totalEur: t.totalEur }));
+
   // --- Gasolina ---
   const fuelRows = db.prepare('SELECT * FROM fuel_logs ORDER BY date DESC, id DESC').all() as FuelRow[];
-  const list: FuelEntryDto[] = fuelRows.map((row) => ({
+  const fuelList: FuelEntryDto[] = fuelRows.map((row) => ({
     ...toFuelDto(row),
     user: requireUser(usersById, row.user_id),
   }));
+  const fuelEntries = fuelRows.map((r) => ({ userId: r.user_id, amountEur: r.amount_eur, type: r.type }));
+  const fuelTotalPerUser = totalsWithUser(computeBalance(fuelEntries, userA.id, userB.id).totalPerUser);
 
-  const balanceRaw = computeFuelBalance(
-    fuelRows.map((r) => ({ userId: r.user_id, amountEur: r.amount_eur, type: r.type })),
-    userA.id,
-    userB.id,
-  );
-  const balance = {
+  // --- Otros gastos ---
+  const otherRows = db
+    .prepare('SELECT * FROM other_expense_logs ORDER BY date DESC, id DESC')
+    .all() as OtherExpenseRow[];
+  const otherList: OtherExpenseEntryDto[] = otherRows.map((row) => ({
+    ...toOtherExpenseDto(row),
+    user: requireUser(usersById, row.user_id),
+  }));
+  const otherEntries = otherRows.map((r) => ({ userId: r.user_id, amountEur: r.amount_eur, type: r.type }));
+  const otherTotalPerUser = totalsWithUser(computeBalance(otherEntries, userA.id, userB.id).totalPerUser);
+
+  // --- Saldo combinado (gasolina + otros) ---
+  const balanceRaw = computeBalance([...fuelEntries, ...otherEntries], userA.id, userB.id);
+  const balance: BalanceDto = {
     settled: balanceRaw.settled,
     amountEur: balanceRaw.amountEur,
     fromUser: balanceRaw.fromUserId != null ? requireUser(usersById, balanceRaw.fromUserId) : null,
     toUser: balanceRaw.toUserId != null ? requireUser(usersById, balanceRaw.toUserId) : null,
   };
-  const totalPerUser = balanceRaw.totalPerUser.map((t) => ({
-    user: requireUser(usersById, t.userId),
-    totalEur: t.totalEur,
-  }));
 
   // --- Lavado ---
   const washRows = db
@@ -131,7 +186,10 @@ export function getExpenses(): ExpensesSummary {
   );
 
   return {
-    fuel: { list, totalPerUser, balance },
+    // `fuel.balance` se mantiene como alias del balance combinado para clientes antiguos (ver interface).
+    fuel: { list: fuelList, totalPerUser: fuelTotalPerUser, balance },
+    other: { list: otherList, totalPerUser: otherTotalPerUser },
+    balance,
     wash: { last, nextWashUser: requireUser(usersById, nextUserId), history },
   };
 }

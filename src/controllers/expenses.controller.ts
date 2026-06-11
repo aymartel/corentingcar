@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { ok } from '../utils/api-response.js';
 import { AppError } from '../utils/app-error.js';
 import { isoDateSchema } from '../utils/validation.js';
-import { createFuel, createWash, getExpenses } from '../services/expenses.service.js';
+import { createFuel, createOtherExpense, createWash, getExpenses } from '../services/expenses.service.js';
 
 /** Cuerpo de POST /api/fuel. Importe en € (> 0, finito). El servidor lo redondea a 2 decimales. */
 export const createFuelSchema = z.object({
@@ -22,6 +22,16 @@ export const createWashSchema = z.object({
 
 type CreateWashBody = z.infer<typeof createWashSchema>;
 
+/** Cuerpo de POST /api/other-expenses. Importe en € (> 0, finito) + descripción obligatoria. */
+export const createOtherExpenseSchema = z.object({
+  date: isoDateSchema,
+  amountEur: z.number().finite().positive(),
+  type: z.enum(['individual', 'shared']),
+  description: z.string().trim().min(1).max(120),
+});
+
+type CreateOtherExpenseBody = z.infer<typeof createOtherExpenseSchema>;
+
 /** POST /api/fuel — registra un repostaje del usuario autenticado. */
 export const createFuelController: RequestHandler = (req, res) => {
   if (!req.authUser) throw new AppError('UNAUTHENTICATED', 'No autenticado.', 401);
@@ -34,6 +44,13 @@ export const createWashController: RequestHandler = (req, res) => {
   if (!req.authUser) throw new AppError('UNAUTHENTICATED', 'No autenticado.', 401);
   const body = req.body as CreateWashBody;
   res.status(201).json(ok(createWash(req.authUser.id, body)));
+};
+
+/** POST /api/other-expenses — registra un "otro gasto" del usuario autenticado. */
+export const createOtherExpenseController: RequestHandler = (req, res) => {
+  if (!req.authUser) throw new AppError('UNAUTHENTICATED', 'No autenticado.', 401);
+  const body = req.body as CreateOtherExpenseBody;
+  res.status(201).json(ok(createOtherExpense(req.authUser.id, body)));
 };
 
 /** GET /api/expenses — resumen de gasolina (balance) + lavado (último/próximo). */

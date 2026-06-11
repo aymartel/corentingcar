@@ -8,9 +8,11 @@ import { mileageController } from '../controllers/mileage.controller.js';
 import {
   createFuelController,
   createWashController,
+  createOtherExpenseController,
   getExpensesController,
   createFuelSchema,
   createWashSchema,
+  createOtherExpenseSchema,
 } from '../controllers/expenses.controller.js';
 import {
   getCarStatusController,
@@ -22,6 +24,7 @@ import { authRouter } from './auth.routes.js';
 import { priorityRouter } from './priority.routes.js';
 import { handoverRouter } from './handover.routes.js';
 import { usageRouter } from './usage.routes.js';
+import { usageChangesRouter } from './usage-changes.routes.js';
 import { requestsRouter } from './requests.routes.js';
 import { requireAuth } from '../middlewares/require-auth.js';
 import { validate } from '../middlewares/validate.js';
@@ -40,10 +43,14 @@ apiRouter.use('/auth', authRouter);
 apiRouter.use('/priority', requireAuth, priorityRouter);
 apiRouter.get('/calendar', requireAuth, validate(z.object({ month: monthSchema }), 'query'), calendarController);
 apiRouter.use('/handovers', requireAuth, handoverRouter);
+// `/usage/changes` se monta ANTES que `/usage` (defensivo): evita que un futuro
+// `GET /usage/:id` ensombrezca la subruta y no duplica la ejecución de requireAuth.
+apiRouter.use('/usage/changes', requireAuth, usageChangesRouter);
 apiRouter.use('/usage', requireAuth, usageRouter);
 apiRouter.get('/mileage', requireAuth, mileageController);
 apiRouter.post('/fuel', requireAuth, validate(createFuelSchema), createFuelController);
 apiRouter.post('/washes', requireAuth, validate(createWashSchema), createWashController);
+apiRouter.post('/other-expenses', requireAuth, validate(createOtherExpenseSchema), createOtherExpenseController);
 apiRouter.get('/expenses', requireAuth, getExpensesController);
 apiRouter.use('/requests', requireAuth, requestsRouter);
 

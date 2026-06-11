@@ -68,6 +68,18 @@ CREATE TABLE IF NOT EXISTS wash_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_wash_logs_date ON wash_logs(date);
 
+CREATE TABLE IF NOT EXISTS other_expense_logs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id),
+  date        TEXT NOT NULL,
+  amount_eur  REAL NOT NULL CHECK (amount_eur >= 0),
+  type        TEXT NOT NULL CHECK (type IN ('individual','shared')),
+  description TEXT NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_other_expense_logs_user ON other_expense_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_other_expense_logs_date ON other_expense_logs(date);
+
 CREATE TABLE IF NOT EXISTS requests (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   requester_id  INTEGER NOT NULL REFERENCES users(id),
@@ -106,4 +118,45 @@ CREATE TABLE IF NOT EXISTS car_status_events (
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_car_status_created ON car_status_events(id);
+
+-- Cambios de uso que requieren aprobación del otro usuario (ver "historial de usos").
+-- Un cambio puede ser: crear un uso pasado desincronizado del odómetro, editar un uso
+-- existente o eliminarlo. Mientras está 'pending' NO afecta a usage_logs ni al odómetro.
+-- usage_id va SIN FOREIGN KEY a propósito: con foreign_keys=ON, una FK haría fallar el
+-- DELETE de un uso (al aprobar una eliminación) por las filas históricas que lo referencian,
+-- o anularía la referencia. Se guarda además un snapshot prev_* para renderizar el histórico.
+CREATE TABLE IF NOT EXISTS usage_change_requests (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  requester_id  INTEGER NOT NULL REFERENCES users(id),
+  recipient_id  INTEGER NOT NULL REFERENCES users(id),
+  kind          TEXT NOT NULL CHECK (kind IN ('create','update','delete')),
+  usage_id      INTEGER,
+  user_id       INTEGER REFERENCES users(id),
+  date          TEXT,
+  start_km      INTEGER CHECK (start_km IS NULL OR start_km >= 0),
+  end_km        INTEGER CHECK (end_km IS NULL OR start_km IS NULL OR end_km >= start_km),
+  type          TEXT CHECK (type IS NULL OR type IN ('individual','shared')),
+  prev_user_id  INTEGER,
+  prev_date     TEXT,
+  prev_start_km INTEGER,
+  prev_end_km   INTEGER,
+  prev_type     TEXT,
+  reason        TEXT,
+  status        TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending','approved','rejected','cancelled')),
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  resolved_at   TEXT,
+  -- Campos obligatorios según el tipo de cambio.
+  CHECK (
+    (kind = 'delete' AND usage_id IS NOT NULL)
+    OR (kind = 'update' AND usage_id IS NOT NULL AND user_id IS NOT NULL AND date IS NOT NULL
+        AND start_km IS NOT NULL AND end_km IS NOT NULL AND type IS NOT NULL)
+    OR (kind = 'create' AND usage_id IS NULL AND user_id IS NOT NULL AND date IS NOT NULL
+        AND start_km IS NOT NULL AND end_km IS NOT NULL AND type IS NOT NULL)
+  )
+);
+CREATE INDEX IF NOT EXISTS idx_usage_changes_status ON usage_change_requests(status);
+-- Un único cambio pendiente por registro de uso (update/delete). Los 'create' (usage_id NULL) no limitan.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_changes_pending_unique
+  ON usage_change_requests(usage_id) WHERE status = 'pending' AND usage_id IS NOT NULL;
 `;

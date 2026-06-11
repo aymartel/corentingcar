@@ -107,6 +107,16 @@ export const openapiDocument = {
           costEur: { type: 'number', nullable: true, example: 12 },
         },
       },
+      OtherExpenseCreate: {
+        type: 'object',
+        required: ['date', 'amountEur', 'type', 'description'],
+        properties: {
+          date: { type: 'string', format: 'date', example: '2026-06-04' },
+          amountEur: { type: 'number', example: 15 },
+          type: { type: 'string', enum: ['individual', 'shared'], example: 'shared' },
+          description: { type: 'string', maxLength: 120, example: 'Peaje AP-7' },
+        },
+      },
       HandoverCreate: {
         type: 'object',
         required: ['date', 'effectivePriorityUserId'],
@@ -317,10 +327,21 @@ export const openapiDocument = {
         responses: { '201': { description: 'Lavado' }, '400': errorResponse, '401': errorResponse },
       },
     },
+    '/api/other-expenses': {
+      post: {
+        tags: ['Gastos'],
+        summary: 'Registrar otro gasto (peaje, líquido, etc.) con descripción',
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/OtherExpenseCreate' } } },
+        },
+        responses: { '201': { description: 'Otro gasto' }, '400': errorResponse, '401': errorResponse },
+      },
+    },
     '/api/expenses': {
       get: {
         tags: ['Gastos'],
-        summary: 'Resumen: balance gasolina + último/próximo lavado',
+        summary: 'Resumen: balance combinado (gasolina + otros) + último/próximo lavado',
         responses: { '200': { description: 'Gastos' }, '401': errorResponse },
       },
     },

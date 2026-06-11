@@ -1,5 +1,7 @@
+import type { EntryType } from './entry-type.js';
+
 /** Tipo de repostaje: individual (lo paga quien consume) o shared (viaje compartido, 50/50). */
-export type FuelType = 'individual' | 'shared';
+export type FuelType = EntryType;
 
 /** Fila `fuel_logs` tal cual en la base de datos. Importes en €. */
 export interface FuelRow {

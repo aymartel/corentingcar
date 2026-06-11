@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { computeFuelBalance, nextWashUserId, round2 } from './expenses.core.js';
+import { computeBalance, nextWashUserId, round2 } from './expenses.core.js';
 
 const A = 1; // Andy
 const B = 2; // Dennis
 
-describe('computeFuelBalance', () => {
-  it('gasolina compartida: el otro debe la mitad a quien pagó', () => {
+describe('computeBalance', () => {
+  it('gasto compartido: el otro debe la mitad a quien pagó', () => {
     // A paga 60 € compartido → B le debe 30 €
-    const bal = computeFuelBalance([{ userId: A, amountEur: 60, type: 'shared' }], A, B);
+    const bal = computeBalance([{ userId: A, amountEur: 60, type: 'shared' }], A, B);
     expect(bal.settled).toBe(false);
     expect(bal.fromUserId).toBe(B);
     expect(bal.toUserId).toBe(A);
@@ -18,8 +18,8 @@ describe('computeFuelBalance', () => {
     ]);
   });
 
-  it('gasolina individual: no genera deuda', () => {
-    const bal = computeFuelBalance([{ userId: A, amountEur: 40, type: 'individual' }], A, B);
+  it('gasto individual: no genera deuda', () => {
+    const bal = computeBalance([{ userId: A, amountEur: 40, type: 'individual' }], A, B);
     expect(bal.settled).toBe(true);
     expect(bal.fromUserId).toBeNull();
     expect(bal.amountEur).toBe(0);
@@ -28,7 +28,7 @@ describe('computeFuelBalance', () => {
   it('mezcla: compensa deudas en ambos sentidos', () => {
     // A paga 60 compartido (B debe 30 a A); B paga 20 compartido (A debe 10 a B)
     // Neto: B debe 20 a A
-    const bal = computeFuelBalance(
+    const bal = computeBalance(
       [
         { userId: A, amountEur: 60, type: 'shared' },
         { userId: B, amountEur: 20, type: 'shared' },
@@ -45,8 +45,8 @@ describe('computeFuelBalance', () => {
     ]);
   });
 
-  it('sin repostajes: saldado', () => {
-    const bal = computeFuelBalance([], A, B);
+  it('sin entradas: saldado', () => {
+    const bal = computeBalance([], A, B);
     expect(bal.settled).toBe(true);
     expect(bal.totalPerUser).toEqual([
       { userId: A, totalEur: 0 },
@@ -56,9 +56,32 @@ describe('computeFuelBalance', () => {
 
   it('importes con decimales (reparto de impar)', () => {
     // A paga 25 compartido → B debe 12.5 a A
-    const bal = computeFuelBalance([{ userId: A, amountEur: 25, type: 'shared' }], A, B);
+    const bal = computeBalance([{ userId: A, amountEur: 25, type: 'shared' }], A, B);
     expect(bal.fromUserId).toBe(B);
     expect(bal.amountEur).toBe(12.5);
+  });
+
+  it('combina gasolina y otros gastos en un único saldo', () => {
+    // Gasolina: A paga 60 compartido (B debe 30 a A).
+    // Otro: B paga 20 compartido (A debe 10 a B).
+    // Neto combinado: B debe 20 a A. La función es agnóstica a la fuente.
+    const bal = computeBalance(
+      [
+        { userId: A, amountEur: 60, type: 'shared' }, // fuel
+        { userId: B, amountEur: 20, type: 'shared' }, // other
+      ],
+      A,
+      B,
+    );
+    expect(bal.fromUserId).toBe(B);
+    expect(bal.toUserId).toBe(A);
+    expect(bal.amountEur).toBe(20);
+  });
+
+  it('otro gasto individual no genera deuda', () => {
+    const bal = computeBalance([{ userId: B, amountEur: 9.9, type: 'individual' }], A, B);
+    expect(bal.settled).toBe(true);
+    expect(bal.amountEur).toBe(0);
   });
 });
 

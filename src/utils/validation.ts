@@ -11,3 +11,6 @@ export const isoDateSchema = z
 export const monthSchema = z
   .string()
   .regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Formato de mes esperado: YYYY-MM');
+
+/** Param `:id` de la URL (llega como string → se coacciona a entero positivo). */
+export const idParamSchema = z.object({ id: z.coerce.number().int().positive() });

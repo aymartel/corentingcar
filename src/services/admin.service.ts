@@ -19,15 +19,15 @@ export interface ResetResult {
 }
 
 /**
- * Borra TODOS los datos transaccionales (cesiones, solicitudes, usos, gasolina, lavados) y
- * registra un uso base de 0 km con el odómetro inicial `initialKm` (el coche se recibe con esa
- * lectura). Conserva usuarios, reglas y la sesión actual. El registro base ancla el odómetro:
- * el primer uso real deberá partir de `initialKm` o más.
+ * Borra TODOS los datos transaccionales (cesiones, solicitudes, usos, gasolina, lavados, otros
+ * gastos) y registra un uso base de 0 km con el odómetro inicial `initialKm` (el coche se recibe
+ * con esa lectura). Conserva usuarios, reglas y la sesión actual. El registro base ancla el
+ * odómetro: el primer uso real deberá partir de `initialKm` o más.
  */
 export function resetAllData(userId: number, initialKm: number): ResetResult {
   const rules = getRules();
   const today = todayInTimezone(rules.timezone);
-  const clearedTables = ['handovers', 'requests', 'usage_logs', 'fuel_logs', 'wash_logs'];
+  const clearedTables = ['handovers', 'requests', 'usage_logs', 'fuel_logs', 'wash_logs', 'other_expense_logs'];
 
   const run = db.transaction(() => {
     // Orden respetando claves foráneas: handovers -> requests antes que el resto.
@@ -36,6 +36,7 @@ export function resetAllData(userId: number, initialKm: number): ResetResult {
     db.prepare('DELETE FROM usage_logs').run();
     db.prepare('DELETE FROM fuel_logs').run();
     db.prepare('DELETE FROM wash_logs').run();
+    db.prepare('DELETE FROM other_expense_logs').run();
 
     // Línea base del odómetro: coche recibido a `initialKm` (uso de 0 km).
     db.prepare(

@@ -2,7 +2,7 @@ import { db } from '../db/connection.js';
 import { AppError } from '../utils/app-error.js';
 import type { UsageRow, UsageDto, UsageType } from '../models/usage.js';
 
-function toUsageDto(row: UsageRow): UsageDto {
+export function toUsageDto(row: UsageRow): UsageDto {
   return {
     id: row.id,
     userId: row.user_id,
@@ -13,6 +13,39 @@ function toUsageDto(row: UsageRow): UsageDto {
     type: row.type,
     createdAt: row.created_at,
   };
+}
+
+/** Devuelve la fila de un uso por id (uso interno, incluye snake_case). */
+export function getUsageRowById(id: number): UsageRow | undefined {
+  return db.prepare('SELECT * FROM usage_logs WHERE id = ?').get(id) as UsageRow | undefined;
+}
+
+/**
+ * Lanza `ODOMETER_INCONSISTENT` si el tramo `[startKm, endKm)` se solapa con algún registro
+ * existente. Tocar bordes (`end_km` de uno == `start_km` del siguiente) NO es solape.
+ * `excludeUsageId` ignora un uso concreto (al editar). `httpStatus` = 400 al proponer, 409 al aprobar.
+ */
+export function assertNoOdometerOverlap(
+  startKm: number,
+  endKm: number,
+  opts: { excludeUsageId?: number; httpStatus?: number } = {},
+): void {
+  const conditions = ['start_km < @endKm', 'end_km > @startKm'];
+  const params: Record<string, unknown> = { startKm, endKm };
+  if (opts.excludeUsageId != null) {
+    conditions.push('id != @excludeId');
+    params.excludeId = opts.excludeUsageId;
+  }
+  const overlap = db
+    .prepare(`SELECT id FROM usage_logs WHERE ${conditions.join(' AND ')} LIMIT 1`)
+    .get(params) as { id: number } | undefined;
+  if (overlap) {
+    throw new AppError(
+      'ODOMETER_INCONSISTENT',
+      `El tramo propuesto (${startKm}–${endKm} km) se solapa con otro registro existente.`,
+      opts.httpStatus ?? 400,
+    );
+  }
 }
 
 /**
