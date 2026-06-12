@@ -3,7 +3,9 @@ import { db } from './connection.js';
 import { migrate } from './migrate.js';
 import {
   migrateCarStatusParking,
+  migrateFuelSplit,
   migrateLegacyProfiles,
+  reconcileRules,
   reconcileSeedUsers,
   seed,
 } from './seed.js';
@@ -23,6 +25,8 @@ export function ensureDatabaseReady(database: typeof db = db): void {
   migrateLegacyProfiles(database);
   // Amplía el parqueo a 'other' (descripción libre) en BD ya existentes (idempotente).
   migrateCarStatusParking(database);
+  // Añade las columnas del reparto de gasolina por km en BD ya existentes (idempotente).
+  migrateFuelSplit(database);
   const { count } = database.prepare('SELECT COUNT(*) AS count FROM users').get() as {
     count: number;
   };
@@ -34,6 +38,8 @@ export function ensureDatabaseReady(database: typeof db = db): void {
   }
   // Aplica cambios de nombre/color del seed a una BD ya existente (idempotente).
   reconcileSeedUsers(database);
+  // Aplica el cupo de km del código a una BD ya existente (idempotente).
+  reconcileRules(database);
 }
 
 // Ejecutable directamente: `pnpm db:bootstrap`.

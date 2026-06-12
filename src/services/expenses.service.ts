@@ -3,19 +3,51 @@ import { AppError } from '../utils/app-error.js';
 import { getRules } from './rules.service.js';
 import { listUsers } from './users.service.js';
 import { computeBalance, nextWashUserId, round2 } from './expenses.core.js';
+import { computeFuelSplit } from './fuel-split.service.js';
 import type { EntryType } from '../models/entry-type.js';
-import type { FuelRow, FuelDto, FuelType } from '../models/fuel.js';
+import type { FuelRow, FuelDto, FuelSplitDto } from '../models/fuel.js';
 import type { WashRow, WashDto } from '../models/wash.js';
 import type { OtherExpenseRow, OtherExpenseDto } from '../models/other-expense.js';
 import type { UserDto } from '../models/user.js';
 
-function toFuelDto(row: FuelRow): FuelDto {
+/**
+ * Construye el desglose del reparto por km de una fila de gasolina a partir de las columnas
+ * persistidas. Devuelve `null` en filas antiguas (sin reparto guardado) → la app cae a `type`.
+ */
+function buildFuelSplit(row: FuelRow, usersByProfile: Map<string, UserDto>): FuelSplitDto | null {
+  if (row.split_method == null || row.payer_share_eur == null) return null;
+  const user1 = usersByProfile.get('user1');
+  const user2 = usersByProfile.get('user2');
+  if (!user1 || !user2) return null;
+  const payerShareEur = round2(row.payer_share_eur);
+  const otherShareEur = round2(row.amount_eur - payerShareEur);
+  return {
+    method: row.split_method,
+    payerShareEur,
+    perUser: [
+      {
+        userId: user1.id,
+        km: row.km_user1 ?? 0,
+        shareEur: user1.id === row.user_id ? payerShareEur : otherShareEur,
+      },
+      {
+        userId: user2.id,
+        km: row.km_user2 ?? 0,
+        shareEur: user2.id === row.user_id ? payerShareEur : otherShareEur,
+      },
+    ],
+  };
+}
+
+function toFuelDto(row: FuelRow, usersByProfile: Map<string, UserDto>): FuelDto {
   return {
     id: row.id,
     userId: row.user_id,
     date: row.date,
     amountEur: round2(row.amount_eur),
     type: row.type,
+    odometerKm: row.odometer_km,
+    split: buildFuelSplit(row, usersByProfile),
     createdAt: row.created_at,
   };
 }
@@ -48,19 +80,39 @@ function requireUser(usersById: Map<number, UserDto>, id: number): UserDto {
   return user;
 }
 
-/** Registra un repostaje asociado a quien repostó/pagó. */
+/**
+ * Registra un repostaje asociado a quien repostó/pagó. Siempre `shared`: el importe se reparte
+ * proporcional a los km que hizo cada persona desde el repostaje anterior, según el ODÓMETRO del
+ * cuadro al repostar (`odometerKm`); 50/50 si no hubo km en el tramo. El reparto se calcula y se
+ * PERSISTE como snapshot (inmutable frente a ediciones posteriores de los usos).
+ */
 export function createFuel(
   userId: number,
-  input: { date: string; amountEur: number; type: FuelType },
+  input: { date: string; amountEur: number; odometerKm: number },
 ): FuelDto {
+  const split = computeFuelSplit(userId, input.odometerKm, input.amountEur);
+  const usersByProfile = new Map(listUsers().map((u) => [u.profile, u]));
+  const kmUser1 = split.perUser.find((p) => p.user.profile === 'user1')?.km ?? null;
+  const kmUser2 = split.perUser.find((p) => p.user.profile === 'user2')?.km ?? null;
+
   const result = db
     .prepare(
-      `INSERT INTO fuel_logs (user_id, date, amount_eur, type)
-       VALUES (@userId, @date, @amountEur, @type)`,
+      `INSERT INTO fuel_logs
+         (user_id, date, amount_eur, type, split_method, payer_share_eur, odometer_km, km_user1, km_user2)
+       VALUES (@userId, @date, @amountEur, 'shared', @splitMethod, @payerShareEur, @odometerKm, @kmUser1, @kmUser2)`,
     )
-    .run({ userId, date: input.date, amountEur: round2(input.amountEur), type: input.type });
+    .run({
+      userId,
+      date: input.date,
+      amountEur: round2(input.amountEur),
+      splitMethod: split.fallback ? 'fallback_5050' : 'km',
+      payerShareEur: split.payerShareEur,
+      odometerKm: input.odometerKm,
+      kmUser1,
+      kmUser2,
+    });
   const row = db.prepare('SELECT * FROM fuel_logs WHERE id = ?').get(result.lastInsertRowid) as FuelRow;
-  return toFuelDto(row);
+  return toFuelDto(row, usersByProfile);
 }
 
 /** Registra un lavado asociado a quien lavó/pagó (coste opcional). */
@@ -133,6 +185,7 @@ export function getExpenses(): ExpensesSummary {
     throw new AppError('NOT_FOUND', 'Faltan usuarios sembrados.', 500);
   }
   const usersById = new Map(users.map((u) => [u.id, u]));
+  const usersByProfile = new Map(users.map((u) => [u.profile, u]));
 
   const totalsWithUser = (raw: { userId: number; totalEur: number }[]): { user: UserDto; totalEur: number }[] =>
     raw.map((t) => ({ user: requireUser(usersById, t.userId), totalEur: t.totalEur }));
@@ -140,10 +193,16 @@ export function getExpenses(): ExpensesSummary {
   // --- Gasolina ---
   const fuelRows = db.prepare('SELECT * FROM fuel_logs ORDER BY date DESC, id DESC').all() as FuelRow[];
   const fuelList: FuelEntryDto[] = fuelRows.map((row) => ({
-    ...toFuelDto(row),
+    ...toFuelDto(row, usersByProfile),
     user: requireUser(usersById, row.user_id),
   }));
-  const fuelEntries = fuelRows.map((r) => ({ userId: r.user_id, amountEur: r.amount_eur, type: r.type }));
+  // `payerShareEur` (reparto por km) sobreescribe el 50/50 del `type`; NULL en filas antiguas → legacy.
+  const fuelEntries = fuelRows.map((r) => ({
+    userId: r.user_id,
+    amountEur: r.amount_eur,
+    type: r.type,
+    payerShareEur: r.payer_share_eur ?? undefined,
+  }));
   const fuelTotalPerUser = totalsWithUser(computeBalance(fuelEntries, userA.id, userB.id).totalPerUser);
 
   // --- Otros gastos ---

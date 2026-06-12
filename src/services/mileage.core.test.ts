@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { roundTo, sharedPerPerson, personMileage } from './mileage.core.js';
 
-const LIMIT = 8000;
+const LIMIT = 7500;
 
 describe('sharedPerPerson (reparto 50/50)', () => {
   it('reparte los km compartidos a la mitad', () => {
@@ -19,22 +19,22 @@ describe('personMileage', () => {
     // 100 individual + (100/2)=50 de compartido
     expect(personMileage(100, 50, LIMIT)).toEqual({
       usedKm: 150,
-      remainingKm: 7850,
+      remainingKm: 7350,
       exceeded: false,
       excessKm: 0,
     });
   });
 
   it('marca exceso al superar el cupo anual', () => {
-    const r = personMileage(8000, 100, LIMIT); // 8100 usados
-    expect(r.usedKm).toBe(8100);
+    const r = personMileage(7500, 100, LIMIT); // 7600 usados
+    expect(r.usedKm).toBe(7600);
     expect(r.exceeded).toBe(true);
     expect(r.excessKm).toBe(100);
     expect(r.remainingKm).toBe(-100);
   });
 
   it('justo en el límite no marca exceso', () => {
-    const r = personMileage(8000, 0, LIMIT);
+    const r = personMileage(7500, 0, LIMIT);
     expect(r.exceeded).toBe(false);
     expect(r.excessKm).toBe(0);
     expect(r.remainingKm).toBe(0);

@@ -4,15 +4,28 @@ import { ok } from '../utils/api-response.js';
 import { AppError } from '../utils/app-error.js';
 import { isoDateSchema } from '../utils/validation.js';
 import { createFuel, createOtherExpense, createWash, getExpenses } from '../services/expenses.service.js';
+import { computeFuelSplit } from '../services/fuel-split.service.js';
 
-/** Cuerpo de POST /api/fuel. Importe en € (> 0, finito). El servidor lo redondea a 2 decimales. */
+/**
+ * Cuerpo de POST /api/fuel. La gasolina siempre es compartida: el importe se reparte por los km
+ * de cada persona desde el último repostaje, según el odómetro del cuadro (`odometerKm`). No se
+ * envía `type`. Importe en € (> 0, finito); `odometerKm` entero >= 0.
+ */
 export const createFuelSchema = z.object({
   date: isoDateSchema,
   amountEur: z.number().finite().positive(),
-  type: z.enum(['individual', 'shared']),
+  odometerKm: z.number().int().nonnegative(),
 });
 
 type CreateFuelBody = z.infer<typeof createFuelSchema>;
+
+/** Query de GET /api/fuel/preview. Importe en € (> 0) y odómetro (entero >= 0). En query: `coerce`. */
+export const fuelPreviewSchema = z.object({
+  amountEur: z.coerce.number().finite().positive(),
+  odometerKm: z.coerce.number().int().nonnegative(),
+});
+
+type FuelPreviewQuery = z.infer<typeof fuelPreviewSchema>;
 
 /** Cuerpo de POST /api/washes. Coste opcional (€, >= 0, finito). */
 export const createWashSchema = z.object({
@@ -37,6 +50,13 @@ export const createFuelController: RequestHandler = (req, res) => {
   if (!req.authUser) throw new AppError('UNAUTHENTICATED', 'No autenticado.', 401);
   const body = req.body as CreateFuelBody;
   res.status(201).json(ok(createFuel(req.authUser.id, body)));
+};
+
+/** GET /api/fuel/preview — calcula (sin persistir) el reparto por km para el usuario autenticado. */
+export const fuelPreviewController: RequestHandler = (req, res) => {
+  if (!req.authUser) throw new AppError('UNAUTHENTICATED', 'No autenticado.', 401);
+  const query = req.query as unknown as FuelPreviewQuery;
+  res.json(ok(computeFuelSplit(req.authUser.id, query.odometerKm, query.amountEur)));
 };
 
 /** POST /api/washes — registra un lavado del usuario autenticado. */

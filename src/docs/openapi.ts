@@ -92,11 +92,13 @@ export const openapiDocument = {
       },
       FuelCreate: {
         type: 'object',
-        required: ['date', 'amountEur', 'type'],
+        required: ['date', 'amountEur', 'odometerKm'],
+        description:
+          'Gasolina siempre compartida: el importe se reparte por los km de cada persona desde el último repostaje, según el odómetro del cuadro (`odometerKm`).',
         properties: {
           date: { type: 'string', format: 'date', example: '2026-06-04' },
           amountEur: { type: 'number', example: 60 },
-          type: { type: 'string', enum: ['individual', 'shared'], example: 'shared' },
+          odometerKm: { type: 'integer', example: 12480 },
         },
       },
       WashCreate: {
@@ -314,6 +316,17 @@ export const openapiDocument = {
           content: { 'application/json': { schema: { $ref: '#/components/schemas/FuelCreate' } } },
         },
         responses: { '201': { description: 'Repostaje' }, '400': errorResponse, '401': errorResponse },
+      },
+    },
+    '/api/fuel/preview': {
+      get: {
+        tags: ['Gastos'],
+        summary: 'Previsualizar el reparto por km de un repostaje (sin persistir)',
+        parameters: [
+          { name: 'amountEur', in: 'query', required: true, schema: { type: 'number' } },
+          { name: 'odometerKm', in: 'query', required: true, schema: { type: 'integer' } },
+        ],
+        responses: { '200': { description: 'Reparto por persona' }, '400': errorResponse, '401': errorResponse },
       },
     },
     '/api/washes': {

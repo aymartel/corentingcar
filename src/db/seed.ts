@@ -16,6 +16,10 @@ const SEED_USERS = [
 /** Fecha ancla de la alternancia de prioridad (configurable). */
 const ANCHOR_DATE = process.env.ANCHOR_DATE ?? '2025-01-01';
 
+/** Cupo de kilómetros anuales (fuente única; ver `reconcileRules` para BD ya sembradas). */
+const ANNUAL_KM_TOTAL = 15000;
+const ANNUAL_KM_PER_PERSON = 7500;
+
 interface UserIdRow {
   id: number;
 }
@@ -56,12 +60,14 @@ export function seed(database: typeof db = db): void {
            id, monthly_fee_eur, fee_split_pct, annual_km_total, annual_km_per_person,
            km_window, shared_km_rounding, anchor_date, anchor_user_id, first_wash_user_id, timezone
          ) VALUES (
-           1, 355.0, 50.0, 16000, 8000,
+           1, 355.0, 50.0, @annual_km_total, @annual_km_per_person,
            'natural', 1, @anchor_date, @anchor_user_id, @first_wash_user_id, 'Europe/Madrid'
          )
          ON CONFLICT(id) DO NOTHING`,
       )
       .run({
+        annual_km_total: ANNUAL_KM_TOTAL,
+        annual_km_per_person: ANNUAL_KM_PER_PERSON,
         anchor_date: ANCHOR_DATE,
         anchor_user_id: user1.id, // Andy tiene prioridad en la fecha ancla
         first_wash_user_id: user1.id, // primer lavado por defecto
@@ -87,6 +93,20 @@ export function reconcileSeedUsers(database: typeof db = db): void {
     }
   });
   run();
+}
+
+/**
+ * Reconcilia el **cupo de km** (total y por persona) de `rules` con los valores del código
+ * (`ANNUAL_KM_TOTAL` / `ANNUAL_KM_PER_PERSON`). Idempotente y seguro en cada arranque: solo toca
+ * esas dos columnas (no `anchor_*`, `fee`, etc.), de modo que un cambio de cupo se aplica a una BD
+ * ya sembrada al re-desplegar. No hace nada si no existe la fila `rules`.
+ */
+export function reconcileRules(database: typeof db = db): void {
+  database
+    .prepare(
+      `UPDATE rules SET annual_km_total = @total, annual_km_per_person = @perPerson WHERE id = 1`,
+    )
+    .run({ total: ANNUAL_KM_TOTAL, perPerson: ANNUAL_KM_PER_PERSON });
 }
 
 /**
@@ -168,6 +188,29 @@ export function migrateCarStatusParking(database: typeof db = db): void {
   } finally {
     database.pragma('foreign_keys = ON');
   }
+}
+
+/**
+ * Migración **idempotente** que añade a `fuel_logs` las columnas del reparto de gasolina por km
+ * (`split_method`, `payer_share_eur`, `km_user1`, `km_user2`). Usa `ALTER TABLE ADD COLUMN` (no
+ * reconstruye la tabla) porque las columnas son nullable. No hace nada si ya existen. Las filas
+ * antiguas quedan con estas columnas a NULL → el saldo sigue calculándose por `type` (50/50).
+ */
+export function migrateFuelSplit(database: typeof db = db): void {
+  const cols = database.prepare(`PRAGMA table_info(fuel_logs)`).all() as { name: string }[];
+  const need = [
+    'split_method TEXT',
+    'payer_share_eur REAL',
+    'odometer_km INTEGER',
+    'km_user1 REAL',
+    'km_user2 REAL',
+  ].filter((c) => !cols.some((col) => col.name === c.split(' ')[0]));
+  if (need.length === 0) return; // ya migrada
+
+  const run = database.transaction(() => {
+    for (const c of need) database.exec(`ALTER TABLE fuel_logs ADD COLUMN ${c}`);
+  });
+  run();
 }
 
 // Ejecutable directamente: `pnpm db:seed`.

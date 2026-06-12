@@ -16,6 +16,42 @@ export interface BalanceEntry {
   userId: number;
   amountEur: number;
   type: EntryType;
+  /**
+   * Parte (€) que asume QUIEN PAGÓ (`userId`); el resto lo asume el otro. Si se indica,
+   * SOBREESCRIBE el reparto por `type` (lo usa la gasolina repartida por km). Si es
+   * `undefined`, se aplica la lógica por `type` (individual entero / shared 50/50).
+   */
+  payerShareEur?: number;
+}
+
+export interface FuelSplit {
+  /** Parte (€) que asume quien pagó. */
+  payerShareEur: number;
+  /** Parte (€) que asume el otro. `payerShareEur + otherShareEur === round2(amountEur)`. */
+  otherShareEur: number;
+  /** `true` si no había km en el periodo y se repartió 50/50. */
+  fallback: boolean;
+}
+
+/**
+ * Reparte un importe de gasolina proporcionalmente a los km de cada persona desde el último
+ * repostaje. `otherShareEur` se deriva por resta para garantizar que las dos partes sumen EXACTO
+ * el importe (sin descuadre de céntimos). Si no hay km en el periodo (`kmPayer + kmOther <= 0`),
+ * se reparte 50/50 y se marca `fallback`.
+ */
+export function splitFuelByKm(amountEur: number, kmPayer: number, kmOther: number): FuelSplit {
+  const amount = round2(amountEur);
+  const totalKm = kmPayer + kmOther;
+  let payerShareEur: number;
+  let fallback = false;
+  if (totalKm <= 0) {
+    payerShareEur = round2(amount / 2);
+    fallback = true;
+  } else {
+    payerShareEur = round2((amount * kmPayer) / totalKm);
+  }
+  const otherShareEur = round2(amount - payerShareEur);
+  return { payerShareEur, otherShareEur, fallback };
 }
 
 export interface Balance {
@@ -52,7 +88,17 @@ export function computeBalance(
     if (isA) paidA += entry.amountEur;
     else paidB += entry.amountEur;
 
-    if (entry.type === 'shared') {
+    if (entry.payerShareEur != null) {
+      // Reparto explícito (gasolina por km): quien pagó asume `payerShareEur`, el otro el resto.
+      const otherShare = entry.amountEur - entry.payerShareEur;
+      if (isA) {
+        shareA += entry.payerShareEur;
+        shareB += otherShare;
+      } else {
+        shareB += entry.payerShareEur;
+        shareA += otherShare;
+      }
+    } else if (entry.type === 'shared') {
       shareA += entry.amountEur / 2;
       shareB += entry.amountEur / 2;
     } else if (isA) {

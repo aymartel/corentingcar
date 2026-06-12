@@ -184,15 +184,24 @@ describe('solicitudes (pending → accepted) y efecto en prioridad', () => {
 });
 
 describe('gastos: gasolina (balance) y lavado (alternancia)', () => {
-  it('gasolina compartida genera deuda; el lavado alterna', async () => {
+  it('gasolina se reparte por km y genera deuda; el lavado alterna', async () => {
+    // Estado de km del mismo archivo: odómetro 0→200 (Andy 0→100 individual, 100→200 compartido).
+    // Repostaje a odómetro 200 → ventana (0, 200]: Andy 150 km, Dennis 50 km.
+    // 60 € repartidos por km → Andy asume 45, Dennis 15 → Dennis debe 15 a Andy (no 50/50).
     await api('POST', '/api/fuel', {
       token: user1Token,
-      body: { date: '2026-01-10', amountEur: 60, type: 'shared' },
+      body: { date: '2026-01-10', amountEur: 60, odometerKm: 200 },
     });
     const exp1 = await api('GET', '/api/expenses', { token: user1Token });
     expect(data(exp1).fuel.balance.fromUser.profile).toBe('user2'); // Dennis debe...
     expect(data(exp1).fuel.balance.toUser.profile).toBe('user1'); // ...a Andy
-    expect(data(exp1).fuel.balance.amountEur).toBe(30);
+    expect(data(exp1).fuel.balance.amountEur).toBe(15);
+    // El reparto por km se persiste y se expone en el historial.
+    const fuelEntry = data(exp1).fuel.list[0];
+    expect(fuelEntry.split.method).toBe('km');
+    expect(fuelEntry.split.payerShareEur).toBe(45); // Andy (pagador) asume 45 €
+    const splitSum = fuelEntry.split.perUser.reduce((s: number, p: any) => s + p.shareEur, 0);
+    expect(splitSum).toBe(60); // las partes suman exacto el importe
 
     // Sin lavados aún → próximo = first_wash (Andy).
     expect(data(exp1).wash.nextWashUser.profile).toBe('user1');
@@ -205,8 +214,8 @@ describe('gastos: gasolina (balance) y lavado (alternancia)', () => {
   });
 
   it('otro gasto compartido se reconcilia con la gasolina en un único saldo', async () => {
-    // Estado previo (mismo archivo): Andy pagó 60 € de gasolina compartido (Dennis debía 30).
-    // Dennis paga ahora 20 € de "otro" compartido (Andy le debería 10). Neto combinado: Dennis debe 20 a Andy.
+    // Estado previo (mismo archivo): Andy pagó 60 € de gasolina repartida por km (Dennis debía 15).
+    // Dennis paga ahora 20 € de "otro" compartido 50/50 (Andy le debería 10). Neto: Dennis debe 5 a Andy.
     const created = await api('POST', '/api/other-expenses', {
       token: user2Token,
       body: { date: '2026-01-12', amountEur: 20, type: 'shared', description: 'Peaje' },
@@ -225,12 +234,34 @@ describe('gastos: gasolina (balance) y lavado (alternancia)', () => {
     expect(otherByProfile.user2).toBe(20);
     expect(otherByProfile.user1).toBe(0);
 
-    // Saldo combinado top-level: Dennis (user2) debe 20 € a Andy (user1).
+    // Saldo combinado top-level: Dennis (user2) debe 5 € a Andy (user1) (15 gasolina − 10 otro).
     expect(data(exp).balance.fromUser.profile).toBe('user2');
     expect(data(exp).balance.toUser.profile).toBe('user1');
-    expect(data(exp).balance.amountEur).toBe(20);
+    expect(data(exp).balance.amountEur).toBe(5);
     // `fuel.balance` es alias del combinado (compatibilidad con clientes antiguos).
     expect(data(exp).fuel.balance.amountEur).toBe(data(exp).balance.amountEur);
+  });
+});
+
+describe('gasolina: preview del reparto por km', () => {
+  it('GET /api/fuel/preview reparte el importe y coacciona el query', async () => {
+    // Hay un repostaje previo a odómetro 200; pedimos preview a odómetro 250 (ventana 200→250).
+    const r = await api('GET', '/api/fuel/preview?amountEur=30&odometerKm=250', { token: user1Token });
+    expect(r.status).toBe(200);
+    const d = data(r);
+    expect(d.amountEur).toBe(30); // amountEur/odometerKm llegan como string y se coaccionan a número
+    expect(d.windowEndKm).toBe(250);
+    expect(d.perUser).toHaveLength(2);
+    expect(typeof d.payerShareEur).toBe('number');
+    // Las partes siempre suman EXACTO el importe (haya o no km en el periodo).
+    const sum = d.perUser.reduce((s: number, p: any) => s + p.shareEur, 0);
+    expect(Math.round(sum * 100) / 100).toBe(30);
+  });
+
+  it('amountEur inválido (<= 0) → 400 VALIDATION_ERROR', async () => {
+    const r = await api('GET', '/api/fuel/preview?amountEur=-5&odometerKm=250', { token: user1Token });
+    expect(r.status).toBe(400);
+    expect(code(r)).toBe('VALIDATION_ERROR');
   });
 });
 

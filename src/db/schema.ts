@@ -49,12 +49,19 @@ CREATE INDEX IF NOT EXISTS idx_usage_logs_user ON usage_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_usage_logs_date ON usage_logs(date);
 
 CREATE TABLE IF NOT EXISTS fuel_logs (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id     INTEGER NOT NULL REFERENCES users(id),
-  date        TEXT NOT NULL,
-  amount_eur  REAL NOT NULL CHECK (amount_eur >= 0),
-  type        TEXT NOT NULL CHECK (type IN ('individual','shared')),
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id         INTEGER NOT NULL REFERENCES users(id),
+  date            TEXT NOT NULL,
+  amount_eur      REAL NOT NULL CHECK (amount_eur >= 0),
+  type            TEXT NOT NULL CHECK (type IN ('individual','shared')),
+  -- Reparto por km desde el último repostaje (NULL en filas antiguas → saldo por 'type').
+  -- 'km' = proporcional a km; 'fallback_5050' = sin km en el periodo, repartido 50/50.
+  split_method    TEXT CHECK (split_method IS NULL OR split_method IN ('km','fallback_5050')),
+  payer_share_eur REAL,     -- parte (€) que asume quien pagó (user_id)
+  odometer_km     INTEGER,  -- km del cuadro al repostar; define la ventana del reparto
+  km_user1        REAL,     -- snapshot de km de user1 en la ventana
+  km_user2        REAL,     -- snapshot de km de user2 en la ventana
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_fuel_logs_user ON fuel_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_fuel_logs_date ON fuel_logs(date);

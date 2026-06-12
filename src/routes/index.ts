@@ -10,9 +10,11 @@ import {
   createWashController,
   createOtherExpenseController,
   getExpensesController,
+  fuelPreviewController,
   createFuelSchema,
   createWashSchema,
   createOtherExpenseSchema,
+  fuelPreviewSchema,
 } from '../controllers/expenses.controller.js';
 import {
   getCarStatusController,
@@ -48,6 +50,7 @@ apiRouter.use('/handovers', requireAuth, handoverRouter);
 apiRouter.use('/usage/changes', requireAuth, usageChangesRouter);
 apiRouter.use('/usage', requireAuth, usageRouter);
 apiRouter.get('/mileage', requireAuth, mileageController);
+apiRouter.get('/fuel/preview', requireAuth, validate(fuelPreviewSchema, 'query'), fuelPreviewController);
 apiRouter.post('/fuel', requireAuth, validate(createFuelSchema), createFuelController);
 apiRouter.post('/washes', requireAuth, validate(createWashSchema), createWashController);
 apiRouter.post('/other-expenses', requireAuth, validate(createOtherExpenseSchema), createOtherExpenseController);
