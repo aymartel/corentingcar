@@ -119,6 +119,18 @@ export const openapiDocument = {
           description: { type: 'string', maxLength: 120, example: 'Peaje AP-7' },
         },
       },
+      SettlementCreate: {
+        type: 'object',
+        required: ['fromUserId', 'toUserId', 'date', 'amountEur'],
+        description: 'Pago directo entre los 2 usuarios (saldar cuentas). Ajusta el balance combinado.',
+        properties: {
+          fromUserId: { type: 'integer', example: 2 },
+          toUserId: { type: 'integer', example: 1 },
+          date: { type: 'string', format: 'date', example: '2026-06-04' },
+          amountEur: { type: 'number', example: 15 },
+          note: { type: 'string', maxLength: 120, example: 'Bizum' },
+        },
+      },
       HandoverCreate: {
         type: 'object',
         required: ['date', 'effectivePriorityUserId'],
@@ -351,10 +363,29 @@ export const openapiDocument = {
         responses: { '201': { description: 'Otro gasto' }, '400': errorResponse, '401': errorResponse },
       },
     },
+    '/api/settlements': {
+      post: {
+        tags: ['Gastos'],
+        summary: 'Registrar un pago directo entre los 2 usuarios (saldar cuentas)',
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/SettlementCreate' } } },
+        },
+        responses: { '201': { description: 'Pago' }, '400': errorResponse, '401': errorResponse },
+      },
+    },
+    '/api/settlements/{id}': {
+      delete: {
+        tags: ['Gastos'],
+        summary: 'Eliminar un pago directo (deshacer)',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+        responses: { '200': { description: 'Eliminado' }, '404': errorResponse, '401': errorResponse },
+      },
+    },
     '/api/expenses': {
       get: {
         tags: ['Gastos'],
-        summary: 'Resumen: balance combinado (gasolina + otros) + último/próximo lavado',
+        summary: 'Resumen: balance combinado (gasolina + otros − pagos) + último/próximo lavado',
         responses: { '200': { description: 'Gastos' }, '401': errorResponse },
       },
     },

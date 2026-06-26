@@ -241,6 +241,42 @@ describe('gastos: gasolina (balance) y lavado (alternancia)', () => {
     // `fuel.balance` es alias del combinado (compatibilidad con clientes antiguos).
     expect(data(exp).fuel.balance.amountEur).toBe(data(exp).balance.amountEur);
   });
+
+  it('un pago directo entre usuarios salda el balance combinado', async () => {
+    // Estado previo (mismo archivo): Dennis (user2) debe 5 € a Andy (user1).
+    const users = data(await api('GET', '/api/users')) as { id: number; profile: string }[];
+    const andy = users.find((u) => u.profile === 'user1')!.id;
+    const dennis = users.find((u) => u.profile === 'user2')!.id;
+
+    const created = await api('POST', '/api/settlements', {
+      token: user2Token,
+      body: { fromUserId: dennis, toUserId: andy, amountEur: 5, date: '2026-01-13', note: 'Bizum' },
+    });
+    expect(created.status).toBe(201);
+    expect(data(created).fromUserId).toBe(dennis);
+
+    const exp = await api('GET', '/api/expenses', { token: user1Token });
+    // El pago de 5 € de Dennis a Andy salda la deuda combinada.
+    expect(data(exp).balance.settled).toBe(true);
+    expect(data(exp).settlements.list).toHaveLength(1);
+    expect(data(exp).settlements.list[0].fromUser.profile).toBe('user2');
+    expect(data(exp).settlements.list[0].toUser.profile).toBe('user1');
+    expect(data(exp).settlements.list[0].note).toBe('Bizum');
+  });
+
+  it('borrar un pago revierte su efecto en el balance', async () => {
+    const list = data(await api('GET', '/api/expenses', { token: user1Token })).settlements.list as {
+      id: number;
+    }[];
+    const del = await api('DELETE', `/api/settlements/${list[0].id}`, { token: user2Token });
+    expect(del.status).toBe(200);
+
+    const exp = await api('GET', '/api/expenses', { token: user1Token });
+    // Sin el pago, vuelve la deuda: Dennis debe 5 € a Andy.
+    expect(data(exp).settlements.list).toHaveLength(0);
+    expect(data(exp).balance.fromUser.profile).toBe('user2');
+    expect(data(exp).balance.amountEur).toBe(5);
+  });
 });
 
 describe('gasolina: preview del reparto por km', () => {

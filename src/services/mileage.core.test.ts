@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { roundTo, sharedPerPerson, personMileage } from './mileage.core.js';
+import {
+  roundTo,
+  sharedPerPerson,
+  personMileage,
+  recommendedAllowanceToDate,
+} from './mileage.core.js';
 
 const LIMIT = 7500;
 
@@ -38,6 +43,26 @@ describe('personMileage', () => {
     expect(r.exceeded).toBe(false);
     expect(r.excessKm).toBe(0);
     expect(r.remainingKm).toBe(0);
+  });
+});
+
+describe('recommendedAllowanceToDate (cupo acumulado, 625/mes)', () => {
+  it('mismo día de inicio → 1 día prorrateado del mes', () => {
+    // 625 * (1/30) = 20.83 → 20.8
+    expect(recommendedAllowanceToDate('2026-06-10', '2026-06-10', 625)).toBe(20.8);
+  });
+
+  it('parte del mes de inicio (10→30 jun = 21 días de 30)', () => {
+    expect(recommendedAllowanceToDate('2026-06-10', '2026-06-30', 625)).toBe(437.5);
+  });
+
+  it('acumula meses: 10 jun → 31 jul = parte de junio + julio entero', () => {
+    // 437.5 (junio 21/30) + 625 (julio entero) = 1062.5
+    expect(recommendedAllowanceToDate('2026-06-10', '2026-07-31', 625)).toBe(1062.5);
+  });
+
+  it('fecha anterior al inicio → 0', () => {
+    expect(recommendedAllowanceToDate('2026-06-10', '2026-06-09', 625)).toBe(0);
   });
 });
 

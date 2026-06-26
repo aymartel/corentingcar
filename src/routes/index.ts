@@ -9,11 +9,14 @@ import {
   createFuelController,
   createWashController,
   createOtherExpenseController,
+  createSettlementController,
+  deleteSettlementController,
   getExpensesController,
   fuelPreviewController,
   createFuelSchema,
   createWashSchema,
   createOtherExpenseSchema,
+  createSettlementSchema,
   fuelPreviewSchema,
 } from '../controllers/expenses.controller.js';
 import {
@@ -54,6 +57,8 @@ apiRouter.get('/fuel/preview', requireAuth, validate(fuelPreviewSchema, 'query')
 apiRouter.post('/fuel', requireAuth, validate(createFuelSchema), createFuelController);
 apiRouter.post('/washes', requireAuth, validate(createWashSchema), createWashController);
 apiRouter.post('/other-expenses', requireAuth, validate(createOtherExpenseSchema), createOtherExpenseController);
+apiRouter.post('/settlements', requireAuth, validate(createSettlementSchema), createSettlementController);
+apiRouter.delete('/settlements/:id', requireAuth, deleteSettlementController);
 apiRouter.get('/expenses', requireAuth, getExpensesController);
 apiRouter.use('/requests', requireAuth, requestsRouter);
 

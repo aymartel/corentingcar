@@ -66,6 +66,20 @@ CREATE TABLE IF NOT EXISTS fuel_logs (
 CREATE INDEX IF NOT EXISTS idx_fuel_logs_user ON fuel_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_fuel_logs_date ON fuel_logs(date);
 
+-- Pagos directos entre los 2 usuarios (saldar cuentas), sin vincular a un gasto.
+-- Ajustan el saldo combinado: un pago de A→B reduce lo que A debe a B (o aumenta lo que B debe a A).
+CREATE TABLE IF NOT EXISTS settlements (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_user_id  INTEGER NOT NULL REFERENCES users(id),
+  to_user_id    INTEGER NOT NULL REFERENCES users(id),
+  date          TEXT NOT NULL,
+  amount_eur    REAL NOT NULL CHECK (amount_eur > 0),
+  note          TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  CHECK (from_user_id <> to_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_settlements_date ON settlements(date);
+
 CREATE TABLE IF NOT EXISTS wash_logs (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id     INTEGER NOT NULL REFERENCES users(id),

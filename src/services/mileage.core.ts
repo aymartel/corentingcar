@@ -5,10 +5,47 @@
  *  - exceso: lo que supera el cupo anual por persona (lo paga quien lo genera).
  */
 
+import { daysInMonth, dayNumberFromIso } from '../utils/date.js';
+
 /** Redondeo a `decimals` decimales (estable frente a ruido de coma flotante). */
 export function roundTo(value: number, decimals: number): number {
   const factor = 10 ** decimals;
   return Math.round((value + Number.EPSILON) * factor) / factor;
+}
+
+/**
+ * Km aconsejados ACUMULADOS por persona entre `startIso` y `todayIso` (ambos inclusive),
+ * prorrateando el cupo mensual por los días cubiertos de cada mes. Modela la acumulación de
+ * un mes a otro: lo no gastado se arrastra y el exceso resta (el ritmo es continuo desde el
+ * primer uso, no se reinicia cada mes). Devuelve 0 si `today` es anterior a `start`.
+ */
+export function recommendedAllowanceToDate(
+  startIso: string,
+  todayIso: string,
+  monthlyPerPerson: number,
+): number {
+  if (dayNumberFromIso(todayIso) < dayNumberFromIso(startIso)) return 0;
+  const sy = Number(startIso.slice(0, 4));
+  const sm = Number(startIso.slice(5, 7));
+  const sd = Number(startIso.slice(8, 10));
+  const ty = Number(todayIso.slice(0, 4));
+  const tm = Number(todayIso.slice(5, 7));
+  const td = Number(todayIso.slice(8, 10));
+  let allowance = 0;
+  let y = sy;
+  let m = sm;
+  while (y < ty || (y === ty && m <= tm)) {
+    const dim = daysInMonth(y, m);
+    const first = y === sy && m === sm ? sd : 1;
+    const last = y === ty && m === tm ? td : dim;
+    allowance += monthlyPerPerson * ((last - first + 1) / dim);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return roundTo(allowance, 1);
 }
 
 /** Parte de km compartidos que corresponde a cada persona (50/50), redondeada. */

@@ -3,7 +3,14 @@ import { z } from 'zod';
 import { ok } from '../utils/api-response.js';
 import { AppError } from '../utils/app-error.js';
 import { isoDateSchema } from '../utils/validation.js';
-import { createFuel, createOtherExpense, createWash, getExpenses } from '../services/expenses.service.js';
+import {
+  createFuel,
+  createOtherExpense,
+  createWash,
+  createSettlement,
+  deleteSettlement,
+  getExpenses,
+} from '../services/expenses.service.js';
 import { computeFuelSplit } from '../services/fuel-split.service.js';
 
 /**
@@ -45,6 +52,17 @@ export const createOtherExpenseSchema = z.object({
 
 type CreateOtherExpenseBody = z.infer<typeof createOtherExpenseSchema>;
 
+/** Cuerpo de POST /api/settlements. Pago directo `fromUserId`→`toUserId` (€ > 0). Nota opcional. */
+export const createSettlementSchema = z.object({
+  fromUserId: z.number().int().positive(),
+  toUserId: z.number().int().positive(),
+  date: isoDateSchema,
+  amountEur: z.number().finite().positive(),
+  note: z.string().trim().max(120).optional(),
+});
+
+type CreateSettlementBody = z.infer<typeof createSettlementSchema>;
+
 /** POST /api/fuel — registra un repostaje del usuario autenticado. */
 export const createFuelController: RequestHandler = (req, res) => {
   if (!req.authUser) throw new AppError('UNAUTHENTICATED', 'No autenticado.', 401);
@@ -71,6 +89,24 @@ export const createOtherExpenseController: RequestHandler = (req, res) => {
   if (!req.authUser) throw new AppError('UNAUTHENTICATED', 'No autenticado.', 401);
   const body = req.body as CreateOtherExpenseBody;
   res.status(201).json(ok(createOtherExpense(req.authUser.id, body)));
+};
+
+/** POST /api/settlements — registra un pago directo entre los 2 usuarios (saldar cuentas). */
+export const createSettlementController: RequestHandler = (req, res) => {
+  if (!req.authUser) throw new AppError('UNAUTHENTICATED', 'No autenticado.', 401);
+  const body = req.body as CreateSettlementBody;
+  res.status(201).json(ok(createSettlement(body)));
+};
+
+/** DELETE /api/settlements/:id — elimina un pago directo (deshacer). */
+export const deleteSettlementController: RequestHandler = (req, res) => {
+  if (!req.authUser) throw new AppError('UNAUTHENTICATED', 'No autenticado.', 401);
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new AppError('VALIDATION_ERROR', 'Id inválido.', 400);
+  }
+  deleteSettlement(id);
+  res.json(ok({ deleted: true }));
 };
 
 /** GET /api/expenses — resumen de gasolina (balance) + lavado (último/próximo). */

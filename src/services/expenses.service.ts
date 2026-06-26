@@ -8,6 +8,7 @@ import type { EntryType } from '../models/entry-type.js';
 import type { FuelRow, FuelDto, FuelSplitDto } from '../models/fuel.js';
 import type { WashRow, WashDto } from '../models/wash.js';
 import type { OtherExpenseRow, OtherExpenseDto } from '../models/other-expense.js';
+import type { SettlementRow, SettlementDto } from '../models/settlement.js';
 import type { UserDto } from '../models/user.js';
 
 /**
@@ -150,23 +151,82 @@ export function createOtherExpense(
   return toOtherExpenseDto(row);
 }
 
+function toSettlementDto(row: SettlementRow): SettlementDto {
+  return {
+    id: row.id,
+    fromUserId: row.from_user_id,
+    toUserId: row.to_user_id,
+    date: row.date,
+    amountEur: round2(row.amount_eur),
+    note: row.note,
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * Registra un pago directo de `fromUserId` a `toUserId` (saldar cuentas), sin vincularlo a un gasto.
+ * Ajusta el saldo combinado: reduce lo que el pagador debe al receptor (o lo invierte si paga de más).
+ */
+export function createSettlement(input: {
+  fromUserId: number;
+  toUserId: number;
+  date: string;
+  amountEur: number;
+  note?: string | null;
+}): SettlementDto {
+  if (input.fromUserId === input.toUserId) {
+    throw new AppError('VALIDATION_ERROR', 'El pagador y el receptor deben ser distintos.', 400);
+  }
+  const users = new Set(listUsers().map((u) => u.id));
+  if (!users.has(input.fromUserId) || !users.has(input.toUserId)) {
+    throw new AppError('NOT_FOUND', 'Usuario no encontrado.', 404);
+  }
+  const result = db
+    .prepare(
+      `INSERT INTO settlements (from_user_id, to_user_id, date, amount_eur, note)
+       VALUES (@fromUserId, @toUserId, @date, @amountEur, @note)`,
+    )
+    .run({
+      fromUserId: input.fromUserId,
+      toUserId: input.toUserId,
+      date: input.date,
+      amountEur: round2(input.amountEur),
+      note: input.note?.trim() ? input.note.trim() : null,
+    });
+  const row = db.prepare('SELECT * FROM settlements WHERE id = ?').get(result.lastInsertRowid) as SettlementRow;
+  return toSettlementDto(row);
+}
+
+/** Elimina un pago directo (deshacer). Lanza 404 si no existe. */
+export function deleteSettlement(id: number): void {
+  const result = db.prepare('DELETE FROM settlements WHERE id = ?').run(id);
+  if (result.changes === 0) {
+    throw new AppError('NOT_FOUND', 'Pago no encontrado.', 404);
+  }
+}
+
 type FuelEntryDto = FuelDto & { user: UserDto };
 type WashEntryDto = WashDto & { user: UserDto };
 type OtherExpenseEntryDto = OtherExpenseDto & { user: UserDto };
+type SettlementEntryDto = SettlementDto & { fromUser: UserDto; toUser: UserDto };
 type BalanceDto = { settled: boolean; fromUser: UserDto | null; toUser: UserDto | null; amountEur: number };
 
 export interface ExpensesSummary {
   fuel: {
     list: FuelEntryDto[];
     totalPerUser: { user: UserDto; totalEur: number }[];
-    /** @deprecated Alias del `balance` combinado top-level (gasolina + otros). Para clientes antiguos. */
+    /** @deprecated Alias del `balance` combinado top-level (gasolina + otros + pagos). Para clientes antiguos. */
     balance: BalanceDto;
   };
   other: {
     list: OtherExpenseEntryDto[];
     totalPerUser: { user: UserDto; totalEur: number }[];
   };
-  /** Saldo combinado (gasolina + otros) entre los 2 usuarios. */
+  /** Pagos directos entre los 2 usuarios (saldar cuentas), que ajustan el balance. */
+  settlements: {
+    list: SettlementEntryDto[];
+  };
+  /** Saldo combinado (gasolina + otros − pagos) entre los 2 usuarios. */
   balance: BalanceDto;
   wash: {
     last: WashEntryDto | null;
@@ -216,8 +276,29 @@ export function getExpenses(): ExpensesSummary {
   const otherEntries = otherRows.map((r) => ({ userId: r.user_id, amountEur: r.amount_eur, type: r.type }));
   const otherTotalPerUser = totalsWithUser(computeBalance(otherEntries, userA.id, userB.id).totalPerUser);
 
-  // --- Saldo combinado (gasolina + otros) ---
-  const balanceRaw = computeBalance([...fuelEntries, ...otherEntries], userA.id, userB.id);
+  // --- Pagos directos (saldar cuentas) ---
+  const settlementRows = db
+    .prepare('SELECT * FROM settlements ORDER BY date DESC, id DESC')
+    .all() as SettlementRow[];
+  const settlementList: SettlementEntryDto[] = settlementRows.map((row) => ({
+    ...toSettlementDto(row),
+    fromUser: requireUser(usersById, row.from_user_id),
+    toUser: requireUser(usersById, row.to_user_id),
+  }));
+  // Un pago de F→T = el pagador asume 0 y el otro asume todo → reduce la deuda de F con T.
+  const settlementEntries = settlementRows.map((r) => ({
+    userId: r.from_user_id,
+    amountEur: r.amount_eur,
+    type: 'shared' as EntryType,
+    payerShareEur: 0,
+  }));
+
+  // --- Saldo combinado (gasolina + otros − pagos) ---
+  const balanceRaw = computeBalance(
+    [...fuelEntries, ...otherEntries, ...settlementEntries],
+    userA.id,
+    userB.id,
+  );
   const balance: BalanceDto = {
     settled: balanceRaw.settled,
     amountEur: balanceRaw.amountEur,
@@ -248,6 +329,7 @@ export function getExpenses(): ExpensesSummary {
     // `fuel.balance` se mantiene como alias del balance combinado para clientes antiguos (ver interface).
     fuel: { list: fuelList, totalPerUser: fuelTotalPerUser, balance },
     other: { list: otherList, totalPerUser: otherTotalPerUser },
+    settlements: { list: settlementList },
     balance,
     wash: { last, nextWashUser: requireUser(usersById, nextUserId), history },
   };
