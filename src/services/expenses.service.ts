@@ -2,7 +2,7 @@ import { db } from '../db/connection.js';
 import { AppError } from '../utils/app-error.js';
 import { getRules } from './rules.service.js';
 import { listUsers } from './users.service.js';
-import { computeBalance, nextWashUserId, round2 } from './expenses.core.js';
+import { computeBalance, nextWash, round2 } from './expenses.core.js';
 import { computeFuelSplit } from './fuel-split.service.js';
 import type { EntryType } from '../models/entry-type.js';
 import type { FuelRow, FuelDto, FuelSplitDto } from '../models/fuel.js';
@@ -231,6 +231,8 @@ export interface ExpensesSummary {
   wash: {
     last: WashEntryDto | null;
     nextWashUser: UserDto;
+    /** Veces SEGUIDAS que le tocan al próximo (>1 si va por detrás porque el otro lavó de más). */
+    owedWashes: number;
     history: WashEntryDto[];
   };
 }
@@ -293,9 +295,17 @@ export function getExpenses(): ExpensesSummary {
     payerShareEur: 0,
   }));
 
-  // --- Saldo combinado (gasolina + otros − pagos) ---
+  // --- Lavado: el coste (si se registró) cuenta como gasto COMPARTIDO en el saldo ---
+  const washRows = db
+    .prepare('SELECT * FROM wash_logs ORDER BY date DESC, created_at DESC, id DESC')
+    .all() as WashRow[];
+  const washEntries = washRows
+    .filter((r) => r.cost_eur != null)
+    .map((r) => ({ userId: r.user_id, amountEur: r.cost_eur as number, type: 'shared' as EntryType }));
+
+  // --- Saldo combinado (gasolina + otros + lavados − pagos) ---
   const balanceRaw = computeBalance(
-    [...fuelEntries, ...otherEntries, ...settlementEntries],
+    [...fuelEntries, ...otherEntries, ...washEntries, ...settlementEntries],
     userA.id,
     userB.id,
   );
@@ -306,10 +316,6 @@ export function getExpenses(): ExpensesSummary {
     toUser: balanceRaw.toUserId != null ? requireUser(usersById, balanceRaw.toUserId) : null,
   };
 
-  // --- Lavado ---
-  const washRows = db
-    .prepare('SELECT * FROM wash_logs ORDER BY date DESC, created_at DESC, id DESC')
-    .all() as WashRow[];
   const history: WashEntryDto[] = washRows.map((row) => ({
     ...toWashDto(row),
     user: requireUser(usersById, row.user_id),
@@ -318,7 +324,13 @@ export function getExpenses(): ExpensesSummary {
   const last: WashEntryDto | null = lastRow
     ? { ...toWashDto(lastRow), user: requireUser(usersById, lastRow.user_id) }
     : null;
-  const nextUserId = nextWashUserId(
+  // Alternancia compensada: le toca al que va por detrás (si uno lavó de más, al otro le
+  // toca tantas veces seguidas como la diferencia) para equilibrar.
+  const washCountA = washRows.filter((r) => r.user_id === userA.id).length;
+  const washCountB = washRows.filter((r) => r.user_id === userB.id).length;
+  const next = nextWash(
+    washCountA,
+    washCountB,
     lastRow ? lastRow.user_id : null,
     userA.id,
     userB.id,
@@ -331,6 +343,11 @@ export function getExpenses(): ExpensesSummary {
     other: { list: otherList, totalPerUser: otherTotalPerUser },
     settlements: { list: settlementList },
     balance,
-    wash: { last, nextWashUser: requireUser(usersById, nextUserId), history },
+    wash: {
+      last,
+      nextWashUser: requireUser(usersById, next.nextUserId),
+      owedWashes: next.owed,
+      history,
+    },
   };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeBalance, nextWashUserId, round2, splitFuelByKm } from './expenses.core.js';
+import { computeBalance, nextWash, round2, splitFuelByKm } from './expenses.core.js';
 
 const A = 1; // Andy
 const B = 2; // Dennis
@@ -144,14 +144,26 @@ describe('splitFuelByKm', () => {
   });
 });
 
-describe('nextWashUserId (alternancia)', () => {
-  it('sin historial → usa el primer lavado configurado', () => {
-    expect(nextWashUserId(null, A, B, A)).toBe(A);
-    expect(nextWashUserId(null, A, B, B)).toBe(B);
+describe('nextWash (alternancia compensada)', () => {
+  it('sin historial → usa el primer lavado configurado (owed 1)', () => {
+    expect(nextWash(0, 0, null, A, B, A)).toEqual({ nextUserId: A, owed: 1 });
+    expect(nextWash(0, 0, null, A, B, B)).toEqual({ nextUserId: B, owed: 1 });
   });
-  it('último A → le toca a B; último B → le toca a A', () => {
-    expect(nextWashUserId(A, A, B, A)).toBe(B);
-    expect(nextWashUserId(B, A, B, A)).toBe(A);
+
+  it('equilibrado con historial → alternancia normal (owed 1)', () => {
+    // Cada uno 1 lavado, el último fue A → le toca a B.
+    expect(nextWash(1, 1, A, A, B, A)).toEqual({ nextUserId: B, owed: 1 });
+    expect(nextWash(1, 1, B, A, B, A)).toEqual({ nextUserId: A, owed: 1 });
+  });
+
+  it('Andy lava dos veces seguidas → a Dennis le tocan 2 seguidas', () => {
+    // A=2, B=0 (Andy lavó de más) → le toca a B (Dennis) 2 veces para equilibrar.
+    expect(nextWash(2, 0, A, A, B, A)).toEqual({ nextUserId: B, owed: 2 });
+  });
+
+  it('tras compensar una, sigue debiendo la otra', () => {
+    // A=2, B=1 → a B le queda 1 (owed 1).
+    expect(nextWash(2, 1, B, A, B, A)).toEqual({ nextUserId: B, owed: 1 });
   });
 });
 

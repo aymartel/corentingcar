@@ -206,16 +206,27 @@ describe('gastos: gasolina (balance) y lavado (alternancia)', () => {
     // Sin lavados aún → próximo = first_wash (Andy).
     expect(data(exp1).wash.nextWashUser.profile).toBe('user1');
 
-    // Andy lava → próximo pasa a Dennis.
+    // Andy lava con coste 12 € → próximo pasa a Dennis Y el coste cuenta como gasto compartido.
     await api('POST', '/api/washes', { token: user1Token, body: { date: '2026-01-11', costEur: 12 } });
     const exp2 = await api('GET', '/api/expenses', { token: user1Token });
     expect(data(exp2).wash.last.user.profile).toBe('user1');
     expect(data(exp2).wash.nextWashUser.profile).toBe('user2');
+    // El lavado (12 €, Andy) es compartido → Dennis suma 6 € a Andy: 15 + 6 = 21.
+    expect(data(exp2).balance.fromUser.profile).toBe('user2');
+    expect(data(exp2).balance.amountEur).toBe(21);
+    expect(data(exp2).wash.owedWashes).toBe(1); // equilibrado tras 1 lavado
+
+    // Andy vuelve a lavar (sin coste) → lavó dos veces seguidas: a Dennis le tocan 2.
+    await api('POST', '/api/washes', { token: user1Token, body: { date: '2026-01-11' } });
+    const exp3 = await api('GET', '/api/expenses', { token: user1Token });
+    expect(data(exp3).wash.nextWashUser.profile).toBe('user2');
+    expect(data(exp3).wash.owedWashes).toBe(2); // acumula: Dennis debe lavar 2 veces
+    expect(data(exp3).balance.amountEur).toBe(21); // 2º lavado sin coste no cambia el saldo
   });
 
   it('otro gasto compartido se reconcilia con la gasolina en un único saldo', async () => {
-    // Estado previo (mismo archivo): Andy pagó 60 € de gasolina repartida por km (Dennis debía 15).
-    // Dennis paga ahora 20 € de "otro" compartido 50/50 (Andy le debería 10). Neto: Dennis debe 5 a Andy.
+    // Estado previo (mismo archivo): gasolina (Dennis debía 15) + lavado 12 € compartido (Dennis +6) = Dennis debe 21.
+    // Dennis paga ahora 20 € de "otro" compartido 50/50 (Andy le debería 10). Neto: Dennis debe 11 a Andy.
     const created = await api('POST', '/api/other-expenses', {
       token: user2Token,
       body: { date: '2026-01-12', amountEur: 20, type: 'shared', description: 'Peaje' },
@@ -234,29 +245,29 @@ describe('gastos: gasolina (balance) y lavado (alternancia)', () => {
     expect(otherByProfile.user2).toBe(20);
     expect(otherByProfile.user1).toBe(0);
 
-    // Saldo combinado top-level: Dennis (user2) debe 5 € a Andy (user1) (15 gasolina − 10 otro).
+    // Saldo combinado top-level: Dennis (user2) debe 11 € a Andy (15 gasolina + 6 lavado − 10 otro).
     expect(data(exp).balance.fromUser.profile).toBe('user2');
     expect(data(exp).balance.toUser.profile).toBe('user1');
-    expect(data(exp).balance.amountEur).toBe(5);
+    expect(data(exp).balance.amountEur).toBe(11);
     // `fuel.balance` es alias del combinado (compatibilidad con clientes antiguos).
     expect(data(exp).fuel.balance.amountEur).toBe(data(exp).balance.amountEur);
   });
 
   it('un pago directo entre usuarios salda el balance combinado', async () => {
-    // Estado previo (mismo archivo): Dennis (user2) debe 5 € a Andy (user1).
+    // Estado previo (mismo archivo): Dennis (user2) debe 11 € a Andy (user1).
     const users = data(await api('GET', '/api/users')) as { id: number; profile: string }[];
     const andy = users.find((u) => u.profile === 'user1')!.id;
     const dennis = users.find((u) => u.profile === 'user2')!.id;
 
     const created = await api('POST', '/api/settlements', {
       token: user2Token,
-      body: { fromUserId: dennis, toUserId: andy, amountEur: 5, date: '2026-01-13', note: 'Bizum' },
+      body: { fromUserId: dennis, toUserId: andy, amountEur: 11, date: '2026-01-13', note: 'Bizum' },
     });
     expect(created.status).toBe(201);
     expect(data(created).fromUserId).toBe(dennis);
 
     const exp = await api('GET', '/api/expenses', { token: user1Token });
-    // El pago de 5 € de Dennis a Andy salda la deuda combinada.
+    // El pago de 11 € de Dennis a Andy salda la deuda combinada.
     expect(data(exp).balance.settled).toBe(true);
     expect(data(exp).settlements.list).toHaveLength(1);
     expect(data(exp).settlements.list[0].fromUser.profile).toBe('user2');
@@ -272,10 +283,10 @@ describe('gastos: gasolina (balance) y lavado (alternancia)', () => {
     expect(del.status).toBe(200);
 
     const exp = await api('GET', '/api/expenses', { token: user1Token });
-    // Sin el pago, vuelve la deuda: Dennis debe 5 € a Andy.
+    // Sin el pago, vuelve la deuda: Dennis debe 11 € a Andy.
     expect(data(exp).settlements.list).toHaveLength(0);
     expect(data(exp).balance.fromUser.profile).toBe('user2');
-    expect(data(exp).balance.amountEur).toBe(5);
+    expect(data(exp).balance.amountEur).toBe(11);
   });
 });
 

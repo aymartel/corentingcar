@@ -139,17 +139,34 @@ export function computeBalance(
   };
 }
 
+export interface NextWash {
+  /** Usuario al que le toca el próximo lavado. */
+  nextUserId: number;
+  /** Veces SEGUIDAS que le tocan (>1 si va por detrás porque el otro lavó de más). */
+  owed: number;
+}
+
 /**
- * Usuario al que le toca el PRÓXIMO lavado (alternancia derivada del historial):
- *  - si no hay lavados todavía → `firstWashUserId` (configurado en rules),
- *  - si el último lo hizo X → le toca al otro.
+ * A quién le toca el PRÓXIMO lavado, COMPENSANDO por cantidad (no solo por el último):
+ *  - si ambos han lavado lo mismo → alternancia normal (el otro del último; `firstWashUserId`
+ *    si no hay lavados todavía) y `owed = 1`;
+ *  - si uno ha lavado de más (p.ej. Andy lavó dos veces seguidas) → le toca al que va por
+ *    detrás tantas veces SEGUIDAS como la diferencia, para que se equilibre.
  */
-export function nextWashUserId(
+export function nextWash(
+  countA: number,
+  countB: number,
   lastWashUserId: number | null,
   userAId: number,
   userBId: number,
   firstWashUserId: number,
-): number {
-  if (lastWashUserId == null) return firstWashUserId;
-  return lastWashUserId === userAId ? userBId : userAId;
+): NextWash {
+  if (countA === countB) {
+    const nextUserId =
+      lastWashUserId == null ? firstWashUserId : lastWashUserId === userAId ? userBId : userAId;
+    return { nextUserId, owed: 1 };
+  }
+  return countA < countB
+    ? { nextUserId: userAId, owed: countB - countA }
+    : { nextUserId: userBId, owed: countA - countB };
 }
