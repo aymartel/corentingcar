@@ -8,14 +8,22 @@ import {
   recommendedAllowanceToDate,
   type PersonMileage,
 } from './mileage.core.js';
-import { todayInTimezone, daysInMonth, dayNumberFromIso } from '../utils/date.js';
+import { todayInTimezone, daysInMonth } from '../utils/date.js';
 import type { UserDto } from '../models/user.js';
 
 export interface PersonMileageDto extends PersonMileage {
   user: UserDto;
   individualKm: number;
-  /** Km usados por la persona ACUMULADOS desde el primer uso (individual + su parte de compartidos). */
-  usedSinceStart: number;
+}
+
+/** Uso vs aconsejado de un mes concreto (para la barra/carrusel mensual). */
+export interface MonthMileageDto {
+  /** Mes `YYYY-MM`. */
+  month: string;
+  /** Km aconsejados por persona ese mes (prorrateado a hoy si es el mes en curso). */
+  recommendedPerPerson: number;
+  /** Km usados por persona ese mes (individual + su parte de compartidos). */
+  perUser: { userId: number; used: number }[];
 }
 
 export interface MileageSummary {
@@ -26,18 +34,17 @@ export interface MileageSummary {
   annualKmPerPerson: number;
   sharedKm: number;
   sharedKmPerPerson: number;
-  // --- Ritmo aconsejado ACUMULADO (el cupo se arrastra de un mes a otro) ---
+  // --- Ritmo aconsejado (el cupo se acumula dentro del año) ---
   /** Fecha del primer uso registrado (inicio del cómputo); `null` si no hay usos. */
   kmStartDate: string | null;
-  /** Días transcurridos desde el primer uso (inclusive). */
-  daysSinceStart: number;
-  /** Cupo aconsejado por persona y mes (= anual / 12). */
+  /** Cupo aconsejado por persona y mes (= anual / 12) y por día (referencia). */
   monthlyKmPerPerson: number;
-  /** Ritmo aconsejado por persona y día (referencia, mensual / días del mes en curso). */
   dailyKmPerPerson: number;
-  /** Km aconsejados por persona ACUMULADOS hasta hoy desde el primer uso (cupo arrastrado). */
-  recommendedToDate: number;
+  /** Km aconsejados por persona ACUMULADOS en el AÑO en curso hasta hoy (barra anual, reinicio 1 ene). */
+  recommendedYearToDate: number;
   perUser: PersonMileageDto[];
+  /** Uso vs aconsejado de cada mes registrado (barra mensual / carrusel, reinicio día 1). */
+  months: MonthMileageDto[];
 }
 
 /**
@@ -102,36 +109,54 @@ export function getMileage(): MileageSummary {
 
   const share = sharedPerPerson(sharedTotal, rules.sharedKmRounding);
 
-  // Inicio del cómputo = fecha del PRIMER uso registrado (el cupo se acumula desde ahí).
+  // Inicio del cómputo = fecha del PRIMER uso registrado.
   const firstUse = db.prepare('SELECT MIN(date) AS start FROM usage_logs').get() as {
     start: string | null;
   };
   const kmStartDate = firstUse.start;
 
-  // Ritmo aconsejado ACUMULADO: cupo mensual (= anual/12) arrastrado desde el primer uso.
   const monthlyKmPerPerson = Math.round(rules.annualKmPerPerson / 12);
   const dailyKmPerPerson = roundTo(monthlyKmPerPerson / dim, 1);
-  const daysSinceStart = kmStartDate
-    ? dayNumberFromIso(today) - dayNumberFromIso(kmStartDate) + 1
-    : 0;
-  const recommendedToDate = kmStartDate
-    ? recommendedAllowanceToDate(kmStartDate, today, monthlyKmPerPerson)
-    : 0;
 
-  // Uso ACUMULADO por persona desde el primer uso (= todo el uso hasta hoy).
-  const usedSinceStartByUser = kmStartDate
-    ? usedKmByUserInWindow('date BETWEEN ? AND ?', [kmStartDate, today], rules.sharedKmRounding)
-    : new Map<number, number>();
+  // Aconsejado ACUMULADO del AÑO a hoy (barra anual; se reinicia el 1 de enero). Arranca en el
+  // primer uso si es de este año; si no, en el 1 de enero.
+  const yearStartForRec = kmStartDate && kmStartDate > windowStart ? kmStartDate : windowStart;
+  const recommendedYearToDate = kmStartDate
+    ? recommendedAllowanceToDate(yearStartForRec, today, monthlyKmPerPerson)
+    : 0;
 
   const perUser: PersonMileageDto[] = listUsers().map((user) => {
     const individualKm = individualByUser.get(user.id) ?? 0;
-    return {
-      user,
-      individualKm,
-      usedSinceStart: usedSinceStartByUser.get(user.id) ?? 0,
-      ...personMileage(individualKm, share, rules.annualKmPerPerson),
-    };
+    return { user, individualKm, ...personMileage(individualKm, share, rules.annualKmPerPerson) };
   });
+
+  // Uso vs aconsejado por MES (barra mensual / carrusel; se reinicia el día 1 de cada mes).
+  const months: MonthMileageDto[] = [];
+  if (kmStartDate) {
+    const users = listUsers();
+    let y = Number(kmStartDate.slice(0, 4));
+    let m = Number(kmStartDate.slice(5, 7));
+    const endY = Number(today.slice(0, 4));
+    const endM = Number(today.slice(5, 7));
+    while (y < endY || (y === endY && m <= endM)) {
+      const mm = `${y}-${String(m).padStart(2, '0')}`;
+      const monthStart = `${mm}-01`;
+      const monthEndFull = `${mm}-${String(daysInMonth(y, m)).padStart(2, '0')}`;
+      const rangeStart = kmStartDate > monthStart ? kmStartDate : monthStart;
+      const rangeEnd = today < monthEndFull ? today : monthEndFull;
+      const usedByUser = usedKmByUserInWindow('substr(date, 1, 7) = ?', [mm], rules.sharedKmRounding);
+      months.push({
+        month: mm,
+        recommendedPerPerson: recommendedAllowanceToDate(rangeStart, rangeEnd, monthlyKmPerPerson),
+        perUser: users.map((u) => ({ userId: u.id, used: usedByUser.get(u.id) ?? 0 })),
+      });
+      m += 1;
+      if (m > 12) {
+        m = 1;
+        y += 1;
+      }
+    }
+  }
 
   return {
     kmWindow: rules.kmWindow,
@@ -142,10 +167,10 @@ export function getMileage(): MileageSummary {
     sharedKm: sharedTotal,
     sharedKmPerPerson: share,
     kmStartDate,
-    daysSinceStart,
     monthlyKmPerPerson,
     dailyKmPerPerson,
-    recommendedToDate,
+    recommendedYearToDate,
     perUser,
+    months,
   };
 }
