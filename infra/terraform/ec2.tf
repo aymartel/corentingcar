@@ -51,6 +51,12 @@ resource "aws_instance" "api" {
   root_block_device {
     volume_size = 30
     volume_type = "gp3"
+
+    # El tag Backup=true es el que busca la política de snapshots (backups.tf).
+    tags = {
+      Name   = "${var.project}-root"
+      Backup = "true"
+    }
   }
 
   # IMDSv2 obligatorio (buena práctica de seguridad).

@@ -7,13 +7,32 @@ Región: **eu-west-1 (Irlanda)**. Dominio: **`api.corentingcar.uk`** (DNS en Clo
 
 ```
 push a main ─► deploy.yml ─► docker build → save|gzip → SCP/SSH (.pem) → compose up (api + Caddy)
-Run Infra  ─► infra.yml  ─► terraform apply → EC2 t3.micro + Elastic IP + SG (eu-west-1)
+Run Infra  ─► infra.yml  ─► terraform apply → EC2 t3.micro + Elastic IP + SG + DLM (eu-west-1)
 Cloudflare ─► A: api.corentingcar.uk → Elastic IP (DNS only)
 ```
 
-## Coste
-- EC2 **t3.micro**: gratis 750 h/mes durante **12 meses**. EBS 30 GB: dentro del free-tier.
-- **IPv4 pública (Elastic IP)**: AWS cobra **~3,5–4 €/mes**. → En la práctica **~3–4 €/mes**.
+## Coste (datos reales, cuenta `491799435593`, julio 2026)
+
+> ⚠️ **El free-tier de 12 meses NO aplica**: la cuenta es antigua (viene de CoBaby), así que el
+> t3.micro se paga a tarifa completa desde el primer día. Verificado en Cost Explorer.
+
+Gasto **solo de CoRetingCar** (recursos `EU-*` = eu-west-1), extrapolado a mes completo:
+
+| Concepto | USD/mes |
+|---|---|
+| EC2 t3.micro (730 h) | ~8,00 |
+| EBS gp3 30 GB | ~2,50 |
+| IPv4 pública (Elastic IP) | ~3,50 |
+| **Total con la instancia encendida** | **~14 $ ≈ 13 €/mes** |
+
+Con la instancia **parada** solo corren EBS + IPv4: **~6 $/mes**. La Elastic IP se cobra igual
+aunque la instancia esté apagada.
+
+- **Snapshots (DLM)**: el servicio es gratis; solo pagas almacenamiento (~0,05 $/GB-mes) y son
+  **incrementales** — con un disco de 30 GB casi vacío y poca escritura diaria, céntimos al mes.
+- 💳 **La factura la están cubriendo créditos promocionales de AWS** (~27 $/mes de uso total de la
+  cuenta, incluida la infra de CoBaby en us-east-1, netean a 0 $). Cuando se agoten, esto pasa a
+  pagarse de verdad. Revisa el saldo en **Billing → Credits**.
 
 ## GitHub Secrets (Settings → Secrets and variables → Actions)
 
@@ -29,9 +48,10 @@ Cloudflare ─► A: api.corentingcar.uk → Elastic IP (DNS only)
 | `USER1_PIN` / `USER2_PIN` | (opcional `1234`/`5678`; solo en el 1er seed) |
 | `ANCHOR_DATE` | (opcional, por defecto `2025-01-01`) |
 
-> ⚠️ Las claves de CoBaby deben tener permisos para crear **EC2/VPC/EIP/S3**. Si el workflow Infra
-> falla con `AccessDenied`, hay que ampliar la política del IAM user (p.ej. `AmazonEC2FullAccess` +
-> `AmazonS3FullAccess`).
+> ⚠️ Las claves de CoBaby deben tener permisos para crear **EC2/VPC/EIP/S3** y, para los snapshots
+> automáticos, también **IAM** (crear el rol de DLM) y **DLM**. Si el workflow Infra falla con
+> `AccessDenied`, hay que ampliar la política del IAM user (p.ej. `AmazonEC2FullAccess` +
+> `AmazonS3FullAccess` + `IAMFullAccess` + `AWSDataLifecycleManagerServiceRole`).
 
 Generar un `SESSION_TOKEN_SECRET` (PowerShell):
 ```powershell
@@ -74,7 +94,7 @@ flutter build apk --release --dart-define=API_URL=https://api.corentingcar.uk
 ## Operación
 - **SSH**: `ssh -i infra/keys/coretingcar_ec2 ec2-user@<public_ip>`
 - **Logs**: `cd ~/coretingcar && docker compose logs -f` (api y caddy)
-- **Backup SQLite**:
+- **Backup SQLite** (copia puntual a tu máquina):
   ```bash
   scp -i infra/keys/coretingcar_ec2 ec2-user@<ip>:/home/ec2-user/coretingcar/data/coche.db ./backup-coche.db
   ```
@@ -90,9 +110,42 @@ flutter build apk --release --dart-define=API_URL=https://api.corentingcar.uk
 - La clave **privada** (`infra/keys/coretingcar_ec2`) está en `.gitignore`: nunca se versiona.
 - IMDSv2 obligatorio en la instancia (ya configurado).
 
+## Backups automáticos (snapshots EBS)
+
+`infra/terraform/backups.tf` crea una política de **Data Lifecycle Manager** que hace un **snapshot
+diario del volumen raíz** (donde vive `coche.db`) a las **03:00 UTC** y conserva los **7 últimos**;
+los más antiguos se borran solos. Ajustable con `backup_retention_days` y `backup_time_utc`.
+
+DLM localiza el volumen por el tag **`Backup=true`** que `ec2.tf` pone en `root_block_device`.
+
+> ⚠️ Es un snapshot **en caliente**: SQLite podría quedar a medio `write`. Para el volumen de
+> escritura de esta app el riesgo es mínimo (WAL se recupera solo), pero antes de una operación
+> delicada haz también el `scp` manual de arriba.
+
+Listar los snapshots existentes:
+```bash
+aws ec2 describe-snapshots --owner-ids self --region eu-west-1 \
+  --filters "Name=tag:Project,Values=coretingcar" \
+  --query 'sort_by(Snapshots,&StartTime)[].[SnapshotId,StartTime,VolumeSize]' --output table
+```
+
+**Restaurar** (crea un volumen desde el snapshot y móntalo para sacar el `.db`):
+```bash
+# 1) Volumen nuevo desde el snapshot, en la misma AZ que la instancia
+aws ec2 create-volume --region eu-west-1 --snapshot-id snap-XXXX \
+  --availability-zone <az-de-la-instancia> --volume-type gp3
+# 2) Adjuntarlo a la instancia
+aws ec2 attach-volume --region eu-west-1 --volume-id vol-YYYY \
+  --instance-id i-ZZZZ --device /dev/sdf
+# 3) Ya por SSH: montar y copiar la BD
+sudo mkdir -p /mnt/restore && sudo mount -o nouuid /dev/nvme1n1p1 /mnt/restore
+cp /mnt/restore/home/ec2-user/coretingcar/data/coche.db ~/coche-restaurada.db
+```
+Recuerda **borrar el volumen temporal** al terminar (`aws ec2 delete-volume`), o seguirás pagándolo.
+
 ## Persistencia
 - La BD vive en `~/coretingcar/data/coche.db` (bind mount). **Sobrevive a los redeploys** del
-  contenedor; solo se perdería si se destruye/recrea la instancia (de ahí los backups).
+  contenedor; solo se perdería si se destruye/recrea la instancia (de ahí los snapshots diarios).
 - En el primer arranque con BD vacía, el contenedor ejecuta migración + seed (Andy/Dennis + reglas).
 
 ## Destruir

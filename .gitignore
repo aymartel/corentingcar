@@ -25,5 +25,8 @@ infra/**/.terraform/*
 *.tfstate
 *.tfstate.*
 *.tfvars
+# Planes: embeben valores sensibles, nunca versionar
+tfplan
+*.tfplan
 !*.tfvars.example
 crash.log

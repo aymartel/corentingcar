@@ -4,3 +4,7 @@ aws_region = "eu-west-1"
 # RECOMENDADO por seguridad: restringe el SSH a tu IP pública.
 # ssh_cidr = "TU_IP_PUBLICA/32"
 ssh_cidr = "0.0.0.0/0"
+
+# Snapshots automáticos del volumen raíz (backups.tf).
+# backup_retention_days = 7      # snapshots diarios a conservar
+# backup_time_utc       = "03:00" # hora UTC del snapshot
