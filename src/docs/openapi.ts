@@ -319,6 +319,51 @@ export const openapiDocument = {
         responses: { '200': { description: 'Resumen' }, '401': errorResponse },
       },
     },
+    '/api/mileage/plans': {
+      get: {
+        tags: ['Kilómetros'],
+        summary: 'Plan de kilometraje vigente, cambio programado, historial y escalones',
+        responses: { '200': { description: 'Planes' }, '401': errorResponse },
+      },
+      post: {
+        tags: ['Kilómetros'],
+        summary: 'Programa un cambio de kilometraje para el día 1 del mes siguiente',
+        description:
+          'El mes de efecto lo calcula el servidor: no se puede programar un cambio retroactivo. ' +
+          'Sustituye a cualquier cambio pendiente (solo puede haber uno).',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['annualKmTotal', 'monthlyFeeEur'],
+                properties: {
+                  annualKmTotal: { type: 'integer', example: 25000 },
+                  monthlyFeeEur: { type: 'number', example: 425 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '201': { description: 'Cambio programado' },
+          '400': errorResponse,
+          '401': errorResponse,
+        },
+      },
+    },
+    '/api/mileage/plans/scheduled': {
+      delete: {
+        tags: ['Kilómetros'],
+        summary: 'Cancela el cambio de kilometraje aún no vigente',
+        responses: {
+          '200': { description: 'Cancelado' },
+          '401': errorResponse,
+          '404': errorResponse,
+        },
+      },
+    },
     '/api/fuel': {
       post: {
         tags: ['Gastos'],

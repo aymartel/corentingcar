@@ -31,6 +31,9 @@ beforeEach(() => {
   db.pragma('foreign_keys = OFF');
   db.exec('DROP TABLE IF EXISTS fuel_logs');
   db.exec('DROP TABLE IF EXISTS users');
+  // La BD en memoria se comparte dentro del fichero: sin este DROP, los planes de otros
+  // tests sobrevivirían y contaminarían la resolución del cupo.
+  db.exec('DROP TABLE IF EXISTS mileage_plans');
   db.pragma('foreign_keys = ON');
   migrate(db); // esquema nuevo (fuel_logs ya trae las columnas del reparto)
   db.prepare('INSERT INTO users (name, profile, pin_hash, color) VALUES (?, ?, ?, ?)').run(

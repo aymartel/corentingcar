@@ -5,7 +5,7 @@ import {
   migrateCarStatusParking,
   migrateFuelSplit,
   migrateLegacyProfiles,
-  reconcileRules,
+  reconcileBaselinePlan,
   reconcileSeedUsers,
   seed,
 } from './seed.js';
@@ -38,8 +38,9 @@ export function ensureDatabaseReady(database: typeof db = db): void {
   }
   // Aplica cambios de nombre/color del seed a una BD ya existente (idempotente).
   reconcileSeedUsers(database);
-  // Aplica el cupo de km del código a una BD ya existente (idempotente).
-  reconcileRules(database);
+  // Aplica la LÍNEA BASE del plan de km (cupo + cuota) del código a una BD ya existente.
+  // Idempotente y seguro: los cambios del usuario viven en `mileage_plans`, no en `rules`.
+  reconcileBaselinePlan(database);
 }
 
 // Ejecutable directamente: `pnpm db:bootstrap`.

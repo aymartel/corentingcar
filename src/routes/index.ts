@@ -6,6 +6,12 @@ import { usersController } from '../controllers/users.controller.js';
 import { calendarController } from '../controllers/priority.controller.js';
 import { mileageController } from '../controllers/mileage.controller.js';
 import {
+  cancelMileagePlanController,
+  getMileagePlansController,
+  scheduleMileagePlanController,
+  scheduleMileagePlanSchema,
+} from '../controllers/mileage-plans.controller.js';
+import {
   createFuelController,
   createWashController,
   createOtherExpenseController,
@@ -52,6 +58,11 @@ apiRouter.use('/handovers', requireAuth, handoverRouter);
 // `GET /usage/:id` ensombrezca la subruta y no duplica la ejecución de requireAuth.
 apiRouter.use('/usage/changes', requireAuth, usageChangesRouter);
 apiRouter.use('/usage', requireAuth, usageRouter);
+// `/mileage/plans` se monta ANTES que `/mileage` (defensivo, igual que `/usage/changes`).
+// OJO: van con requireAuth — NO colgar estas rutas de `/rules`, que es pública.
+apiRouter.get('/mileage/plans', requireAuth, getMileagePlansController);
+apiRouter.post('/mileage/plans', requireAuth, validate(scheduleMileagePlanSchema), scheduleMileagePlanController);
+apiRouter.delete('/mileage/plans/scheduled', requireAuth, cancelMileagePlanController);
 apiRouter.get('/mileage', requireAuth, mileageController);
 apiRouter.get('/fuel/preview', requireAuth, validate(fuelPreviewSchema, 'query'), fuelPreviewController);
 apiRouter.post('/fuel', requireAuth, validate(createFuelSchema), createFuelController);

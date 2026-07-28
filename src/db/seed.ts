@@ -16,9 +16,18 @@ const SEED_USERS = [
 /** Fecha ancla de la alternancia de prioridad (configurable). */
 const ANCHOR_DATE = process.env.ANCHOR_DATE ?? '2025-01-01';
 
-/** Cupo de kilómetros anuales (fuente única; ver `reconcileRules` para BD ya sembradas). */
+/**
+ * LÍNEA BASE del plan de kilometraje: el escalón con el que arrancó el acuerdo. Es propiedad
+ * del código y se reconcilia en cada arranque (ver `reconcileBaselinePlan`). Los cambios que
+ * hace el usuario desde la app NO viven aquí, sino en la tabla `mileage_plans`.
+ *
+ * OJO: editar estas constantes reescribe retroactivamente los meses ANTERIORES al primer
+ * cambio programado (son los que caen en la línea base). Cambiar de escalón se hace desde la
+ * app, no aquí.
+ */
 const ANNUAL_KM_TOTAL = 15000;
 const ANNUAL_KM_PER_PERSON = 7500;
+const MONTHLY_FEE_EUR = 355.0;
 
 interface UserIdRow {
   id: number;
@@ -60,12 +69,13 @@ export function seed(database: typeof db = db): void {
            id, monthly_fee_eur, fee_split_pct, annual_km_total, annual_km_per_person,
            km_window, shared_km_rounding, anchor_date, anchor_user_id, first_wash_user_id, timezone
          ) VALUES (
-           1, 355.0, 50.0, @annual_km_total, @annual_km_per_person,
+           1, @monthly_fee_eur, 50.0, @annual_km_total, @annual_km_per_person,
            'natural', 1, @anchor_date, @anchor_user_id, @first_wash_user_id, 'Europe/Madrid'
          )
          ON CONFLICT(id) DO NOTHING`,
       )
       .run({
+        monthly_fee_eur: MONTHLY_FEE_EUR,
         annual_km_total: ANNUAL_KM_TOTAL,
         annual_km_per_person: ANNUAL_KM_PER_PERSON,
         anchor_date: ANCHOR_DATE,
@@ -96,17 +106,22 @@ export function reconcileSeedUsers(database: typeof db = db): void {
 }
 
 /**
- * Reconcilia el **cupo de km** (total y por persona) de `rules` con los valores del código
- * (`ANNUAL_KM_TOTAL` / `ANNUAL_KM_PER_PERSON`). Idempotente y seguro en cada arranque: solo toca
- * esas dos columnas (no `anchor_*`, `fee`, etc.), de modo que un cambio de cupo se aplica a una BD
- * ya sembrada al re-desplegar. No hace nada si no existe la fila `rules`.
+ * Reconcilia la **LÍNEA BASE del plan de kilometraje** (cupo total, cupo por persona y cuota)
+ * de `rules` con los valores del código. Idempotente y seguro en cada arranque: solo toca esas
+ * tres columnas (no `anchor_*`, `fee_split_pct`, etc.).
+ *
+ * Sigue siendo un UPDATE incondicional, y es seguro **porque los cambios que hace el usuario
+ * desde la app NO viven en `rules`**, sino en `mileage_plans`: esta fila es únicamente el plan
+ * de partida, propiedad del código. Un redespliegue no puede revertir un cambio del usuario.
  */
-export function reconcileRules(database: typeof db = db): void {
+export function reconcileBaselinePlan(database: typeof db = db): void {
   database
     .prepare(
-      `UPDATE rules SET annual_km_total = @total, annual_km_per_person = @perPerson WHERE id = 1`,
+      `UPDATE rules
+       SET annual_km_total = @total, annual_km_per_person = @perPerson, monthly_fee_eur = @fee
+       WHERE id = 1`,
     )
-    .run({ total: ANNUAL_KM_TOTAL, perPerson: ANNUAL_KM_PER_PERSON });
+    .run({ total: ANNUAL_KM_TOTAL, perPerson: ANNUAL_KM_PER_PERSON, fee: MONTHLY_FEE_EUR });
 }
 
 /**

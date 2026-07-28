@@ -40,6 +40,19 @@ export function daysInMonth(year: number, month1: number): number {
   return new Date(Date.UTC(year, month1, 0)).getUTCDate();
 }
 
+/** Mes `YYYY-MM` al que pertenece una fecha `YYYY-MM-DD`. */
+export function monthOfIso(iso: string): string {
+  return iso.slice(0, 7);
+}
+
+/** Mes siguiente a un `YYYY-MM` (diciembre rueda a enero del año siguiente). */
+export function nextMonth(yearMonth: string): string {
+  const year = Number(yearMonth.slice(0, 4));
+  const month1 = Number(yearMonth.slice(5, 7));
+  if (month1 === 12) return `${year + 1}-01`;
+  return `${year}-${String(month1 + 1).padStart(2, '0')}`;
+}
+
 /** Lista de fechas `YYYY-MM-DD` de un mes `YYYY-MM`. */
 export function enumerateMonthDays(month: string): string[] {
   const [ys, ms] = month.split('-');

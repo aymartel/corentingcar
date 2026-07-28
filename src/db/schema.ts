@@ -13,6 +13,10 @@ CREATE TABLE IF NOT EXISTS users (
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Configuración singleton del acuerdo. OJO: monthly_fee_eur, annual_km_total y
+-- annual_km_per_person son la LÍNEA BASE del plan de kilometraje (propiedad del código, ver
+-- reconcileBaselinePlan en seed.ts). El plan realmente vigente en cada mes lo resuelve
+-- mileage_plans, que cae en estas columnas cuando no hay ningún cambio anterior a ese mes.
 CREATE TABLE IF NOT EXISTS rules (
   id                    INTEGER PRIMARY KEY CHECK (id = 1),
   monthly_fee_eur       REAL NOT NULL,
@@ -180,4 +184,24 @@ CREATE INDEX IF NOT EXISTS idx_usage_changes_status ON usage_change_requests(sta
 -- Un único cambio pendiente por registro de uso (update/delete). Los 'create' (usage_id NULL) no limitan.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_changes_pending_unique
   ON usage_change_requests(usage_id) WHERE status = 'pending' AND usage_id IS NOT NULL;
+
+-- Cambios del plan de kilometraje contratado (15.000 / 20.000 / 25.000 km al AÑO, con su cuota).
+-- Cada fila rige DESDE el día 1 de effective_month; el plan vigente en un mes M es la fila con
+-- MAX(effective_month) <= M y, si no hay ninguna, la LÍNEA BASE de rules. Por eso la tabla
+-- arranca VACÍA: el despliegue es un no-op numérico exacto (15000/24 = 625 = el cupo mensual por
+-- persona de hoy) y no hace falta backfill ni migración de datos.
+-- Solo se borran filas FUTURAS (effective_month > mes en curso): el histórico es inmutable, de
+-- modo que un mes ya pasado conserva siempre el cupo y la cuota que estuvieron vigentes entonces.
+-- monthly_fee_eur se guarda como SNAPSHOT: si el renting cambia sus tarifas, el histórico de
+-- euros no se falsea. annual_km_per_person no se guarda (es annual_km_total / 2).
+-- created_by_user_id va SIN FOREIGN KEY a propósito: algunos tests hacen DROP TABLE users.
+CREATE TABLE IF NOT EXISTS mileage_plans (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  effective_month    TEXT NOT NULL UNIQUE
+                     CHECK (effective_month GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]'),
+  annual_km_total    INTEGER NOT NULL CHECK (annual_km_total > 0),
+  monthly_fee_eur    REAL NOT NULL CHECK (monthly_fee_eur >= 0),
+  created_by_user_id INTEGER,
+  created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `;

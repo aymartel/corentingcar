@@ -8,6 +8,7 @@ import { buildApp } from '../app.js';
 import { env } from '../config/env.js';
 import { db } from '../db/connection.js';
 import { seed } from '../db/seed.js';
+import { monthOfIso, nextMonth, todayInTimezone } from '../utils/date.js';
 
 let server: Server;
 let base: string;
@@ -554,6 +555,209 @@ describe('validación', () => {
     });
     expect(tooLong.status).toBe(400);
     expect(code(tooLong)).toBe('VALIDATION_ERROR');
+  });
+});
+
+// Va al final (antes del rate-limit) porque el último caso usa /api/admin/reset, que borra los
+// datos transaccionales de los bloques anteriores.
+describe('planes de kilometraje (ajuste del cupo con fecha de efecto)', () => {
+  const today = todayInTimezone('Europe/Madrid');
+  const currentMonth = monthOfIso(today);
+  const effectiveMonth = nextMonth(currentMonth);
+
+  /** Deja la tabla de planes vacía (el estado de partida: solo la línea base de `rules`). */
+  function clearPlans(): void {
+    db.prepare('DELETE FROM mileage_plans').run();
+  }
+
+  it('las rutas exigen sesión (no cuelgan de /rules, que es pública)', async () => {
+    expect((await api('GET', '/api/mileage/plans')).status).toBe(401);
+    expect(
+      (await api('POST', '/api/mileage/plans', { body: { annualKmTotal: 25000, monthlyFeeEur: 425 } }))
+        .status,
+    ).toBe(401);
+    expect((await api('DELETE', '/api/mileage/plans/scheduled')).status).toBe(401);
+    // La lectura pública de reglas sí sigue abierta.
+    expect((await api('GET', '/api/rules')).status).toBe(200);
+  });
+
+  it('sin cambios: plan vigente = línea base y catálogo con los deltas del renting', async () => {
+    clearPlans();
+    const r = await api('GET', '/api/mileage/plans', { token: user1Token });
+    expect(r.status).toBe(200);
+    expect(data(r).current.annualKmTotal).toBe(15000);
+    expect(data(r).current.monthlyKmTotal).toBe(1250);
+    expect(data(r).current.monthlyKmPerPerson).toBe(625);
+    expect(data(r).current.effectiveMonth).toBeNull(); // "desde el inicio"
+    expect(data(r).scheduled).toBeNull();
+
+    const options = data(r).options as any[];
+    expect(options.map((o) => o.annualKmTotal)).toEqual([15000, 20000, 25000]);
+    expect(options.map((o) => o.extraFeeEur)).toEqual([0, 30, 70]);
+    expect(options.map((o) => o.isCurrent)).toEqual([true, false, false]);
+    // 25.000 → 2.083 km/mes entre los dos y 1.041,67 por persona.
+    expect(options[2].monthlyKmTotal).toBe(2083);
+    expect(options[2].monthlyKmPerPerson).toBe(1041.67);
+    expect(options[2].feePerPerson).toBe(212.5);
+    expect(options[2].feeDeltaEur).toBe(70);
+  });
+
+  it('programar un cambio no mueve la cuota, el cupo del mes ni el ritmo (entra el día 1)', async () => {
+    clearPlans();
+    const before = await api('GET', '/api/mileage', { token: user1Token });
+    const rulesBefore = await api('GET', '/api/rules');
+
+    const posted = await api('POST', '/api/mileage/plans', {
+      token: user1Token,
+      body: { annualKmTotal: 25000, monthlyFeeEur: 425 },
+    });
+    expect(posted.status).toBe(201);
+    expect(data(posted).scheduled.effectiveMonth).toBe(effectiveMonth);
+    expect(data(posted).scheduled.annualKmTotal).toBe(25000);
+    expect(data(posted).scheduled.createdBy.profile).toBe('user1'); // queda registrado el autor
+    expect(data(posted).current.annualKmTotal).toBe(15000); // hoy sigue el plan viejo
+
+    const after = await api('GET', '/api/mileage', { token: user1Token });
+    // El mes en curso mantiene su cupo: los km extra son de los meses que aún no han empezado.
+    expect(data(after).currentMonthKmPerPerson).toBe(data(before).currentMonthKmPerPerson);
+    expect(data(after).monthlyKmPerPerson).toBe(data(before).monthlyKmPerPerson);
+    // Y el ritmo acumulado tampoco cambia: los meses ya transcurridos conservan su plan.
+    expect(data(after).recommendedYearToDate).toBe(data(before).recommendedYearToDate);
+
+    // En cambio el CUPO DEL AÑO sí crece ya (bolsa anual única, como en la app del renting:
+    // al elegir el escalón te enseña el total nuevo aunque se aplique desde el mes que viene).
+    const sameYear = effectiveMonth.slice(0, 4) === currentMonth.slice(0, 4);
+    if (sameYear) {
+      const monthsAtOldPlan = Number(effectiveMonth.slice(5, 7)) - 1;
+      const expectedYear = Math.round(
+        monthsAtOldPlan * 625 + (12 - monthsAtOldPlan) * (25000 / 24),
+      );
+      expect(data(after).yearKmPerPerson).toBe(expectedYear);
+    } else {
+      // Cambio programado para enero: el año en curso no se toca.
+      expect(data(after).yearKmPerPerson).toBe(data(before).yearKmPerPerson);
+    }
+    expect(data(after).yearKmTotal).toBe(data(after).yearKmPerPerson * 2);
+
+    const rulesAfter = await api('GET', '/api/rules');
+    expect(data(rulesAfter).monthlyFeeEur).toBe(data(rulesBefore).monthlyFeeEur);
+    expect(data(rulesAfter).annualKmTotal).toBe(15000); // nominal: sigue el plan vigente
+    expect(data(rulesAfter).scheduledKmPlan.annualKmTotal).toBe(25000);
+
+    // Reprogramar sustituye al pendiente: nunca hay dos cambios a la vez.
+    await api('POST', '/api/mileage/plans', {
+      token: user2Token,
+      body: { annualKmTotal: 20000, monthlyFeeEur: 385 },
+    });
+    const rows = db.prepare('SELECT * FROM mileage_plans').all() as { annual_km_total: number }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].annual_km_total).toBe(20000);
+
+    clearPlans();
+  });
+
+  it('ya en vigor: cuota, cupo por persona y cupo del mes pasan al plan nuevo', async () => {
+    clearPlans();
+    // Se fuerza el efecto insertando la fila con el MES EN CURSO en vez de depender del reloj.
+    db.prepare(
+      `INSERT INTO mileage_plans (effective_month, annual_km_total, monthly_fee_eur, created_by_user_id)
+       VALUES (?, 25000, 425, 1)`,
+    ).run(currentMonth);
+
+    const rules = await api('GET', '/api/rules');
+    expect(data(rules).monthlyFeeEur).toBe(425);
+    expect(data(rules).feePerPerson).toBe(212.5); // derivado de la MISMA cuota, no de rules
+    expect(data(rules).annualKmTotal).toBe(25000); // nominal del contrato
+    expect(data(rules).kmPlan.monthlyKmTotal).toBe(2083);
+
+    const m = await api('GET', '/api/mileage', { token: user1Token });
+    expect(data(m).currentMonthKmTotal).toBe(2083);
+    expect(data(m).currentMonthKmPerPerson).toBe(1041.67);
+    // Cupo del año MIXTO: los meses anteriores conservan 625 y los que quedan valen 1.041,67.
+    const monthsAtOldPlan = Number(currentMonth.slice(5, 7)) - 1;
+    const expectedYear = Math.round(monthsAtOldPlan * 625 + (12 - monthsAtOldPlan) * (25000 / 24));
+    expect(data(m).yearKmPerPerson).toBe(expectedYear);
+    expect(data(m).yearKmTotal).toBe(expectedYear * 2);
+    // Las barras cuadran: el total es exactamente el doble del de por persona.
+    expect(data(m).annualKmTotal).toBe(data(m).annualKmPerPerson * 2);
+    // Los tramos explican el cupo mixto en la UI.
+    expect((data(m).yearPlanSegments as any[]).at(-1).annualKmTotal).toBe(25000);
+
+    clearPlans();
+  });
+
+  it('cancelar el cambio programado, y cancelar dos veces → 404', async () => {
+    clearPlans();
+    await api('POST', '/api/mileage/plans', {
+      token: user1Token,
+      body: { annualKmTotal: 25000, monthlyFeeEur: 425 },
+    });
+
+    const cancelled = await api('DELETE', '/api/mileage/plans/scheduled', { token: user1Token });
+    expect(cancelled.status).toBe(200);
+    expect(data(cancelled).scheduled).toBeNull();
+
+    const again = await api('DELETE', '/api/mileage/plans/scheduled', { token: user1Token });
+    expect(again.status).toBe(404);
+    expect(code(again)).toBe('NO_SCHEDULED_PLAN');
+  });
+
+  it('no se puede borrar el histórico: cancelar no toca un plan ya vigente', async () => {
+    clearPlans();
+    db.prepare(
+      `INSERT INTO mileage_plans (effective_month, annual_km_total, monthly_fee_eur, created_by_user_id)
+       VALUES (?, 25000, 425, 1)`,
+    ).run(currentMonth);
+
+    const r = await api('DELETE', '/api/mileage/plans/scheduled', { token: user1Token });
+    expect(r.status).toBe(404); // no hay nada FUTURO que cancelar
+    expect(db.prepare('SELECT COUNT(*) AS n FROM mileage_plans').get()).toEqual({ n: 1 });
+
+    clearPlans();
+  });
+
+  it('valida el cuerpo (enteros, sin Infinity, sin negativos)', async () => {
+    for (const body of [
+      { annualKmTotal: 0, monthlyFeeEur: 355 },
+      { annualKmTotal: 15000.5, monthlyFeeEur: 355 },
+      { annualKmTotal: 15000, monthlyFeeEur: -1 },
+      { annualKmTotal: 15000, monthlyFeeEur: 1e999 },
+      { annualKmTotal: '25000', monthlyFeeEur: 425 },
+    ]) {
+      const r = await api('POST', '/api/mileage/plans', { token: user1Token, body });
+      expect(r.status).toBe(400);
+      expect(code(r)).toBe('VALIDATION_ERROR');
+    }
+  });
+
+  it('los campos del contrato antiguo siguen presentes (app ya instalada)', async () => {
+    const rules = await api('GET', '/api/rules');
+    for (const key of ['monthlyFeeEur', 'feePerPerson', 'annualKmTotal', 'annualKmPerPerson']) {
+      expect(data(rules)[key]).toEqual(expect.any(Number));
+    }
+    const m = await api('GET', '/api/mileage', { token: user1Token });
+    for (const key of ['annualKmTotal', 'annualKmPerPerson', 'monthlyKmPerPerson']) {
+      expect(data(m)[key]).toEqual(expect.any(Number));
+    }
+  });
+
+  it('el reset de admin NO borra los planes (es configuración, como rules)', async () => {
+    clearPlans();
+    await api('POST', '/api/mileage/plans', {
+      token: user1Token,
+      body: { annualKmTotal: 25000, monthlyFeeEur: 425 },
+    });
+
+    const reset = await api('POST', '/api/admin/reset', {
+      token: user1Token,
+      body: { initialKm: 1000, password: 'Pass4admin' },
+    });
+    expect(reset.status).toBe(200);
+
+    const r = await api('GET', '/api/mileage/plans', { token: user1Token });
+    expect(data(r).scheduled.annualKmTotal).toBe(25000);
+
+    clearPlans();
   });
 });
 

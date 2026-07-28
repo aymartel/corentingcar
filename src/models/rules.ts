@@ -1,3 +1,5 @@
+import type { MileagePlanDto } from './mileage-plan.js';
+
 /** Fila `rules` tal cual en la base de datos (snake_case). */
 export interface RulesRow {
   id: number;
@@ -16,10 +18,12 @@ export interface RulesRow {
 
 /** DTO de reglas para la API (camelCase), con el reparto por persona derivado. */
 export interface RulesDto {
+  /** Cuota del plan de kilometraje VIGENTE hoy (no necesariamente la de `rules`). */
   monthlyFeeEur: number;
   feeSplitPct: number;
-  /** Derivado en servidor: monthly_fee_eur * fee_split_pct / 100 (p.ej. 177.5). */
+  /** Derivado en servidor: monthlyFeeEur * fee_split_pct / 100 (p.ej. 177.5). */
   feePerPerson: number;
+  /** NOMINAL del plan contratado vigente (15.000 / 20.000 / 25.000 km al año). */
   annualKmTotal: number;
   annualKmPerPerson: number;
   kmWindow: string;
@@ -29,4 +33,8 @@ export interface RulesDto {
   firstWashUserId: number;
   timezone: string;
   updatedAt: string;
+  /** Plan de kilometraje vigente hoy, con sus cifras mensuales y por persona ya derivadas. */
+  kmPlan: MileagePlanDto;
+  /** Cambio de plan programado para un mes futuro, si lo hay. */
+  scheduledKmPlan: MileagePlanDto | null;
 }
