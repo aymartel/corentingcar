@@ -4,6 +4,8 @@ import { getRules } from './rules.service.js';
 import { listUsers } from './users.service.js';
 import { computeBalance, nextWash, round2 } from './expenses.core.js';
 import { computeFuelSplit } from './fuel-split.service.js';
+import { listIncidentRows, listIncidents } from './incidents.service.js';
+import type { IncidentEntryDto } from '../models/incident.js';
 import type { EntryType } from '../models/entry-type.js';
 import type { FuelRow, FuelDto, FuelSplitDto } from '../models/fuel.js';
 import type { WashRow, WashDto } from '../models/wash.js';
@@ -215,18 +217,28 @@ export interface ExpensesSummary {
   fuel: {
     list: FuelEntryDto[];
     totalPerUser: { user: UserDto; totalEur: number }[];
-    /** @deprecated Alias del `balance` combinado top-level (gasolina + otros + pagos). Para clientes antiguos. */
+    /** @deprecated Alias del `balance` combinado top-level (gasolina + otros + lavados + incidencias − pagos). Para clientes antiguos. */
     balance: BalanceDto;
   };
   other: {
     list: OtherExpenseEntryDto[];
     totalPerUser: { user: UserDto; totalEur: number }[];
   };
+  /** Incidencias del coche (multas, golpes, averías): importan al final del contrato. */
+  incidents: {
+    list: IncidentEntryDto[];
+    /** Cuántas siguen ABIERTAS (lo que hay que revisar antes de devolver el coche). */
+    openCount: number;
+    /** Coste previsto de las abiertas. Aún NO está en el saldo. */
+    pendingAmountEur: number;
+    /** Lo desembolsado por cada uno en incidencias ya resueltas. */
+    totalPerUser: { user: UserDto; totalEur: number }[];
+  };
   /** Pagos directos entre los 2 usuarios (saldar cuentas), que ajustan el balance. */
   settlements: {
     list: SettlementEntryDto[];
   };
-  /** Saldo combinado (gasolina + otros − pagos) entre los 2 usuarios. */
+  /** Saldo combinado (gasolina + otros + lavados + incidencias resueltas − pagos) entre los 2 usuarios. */
   balance: BalanceDto;
   wash: {
     last: WashEntryDto | null;
@@ -303,9 +315,35 @@ export function getExpenses(): ExpensesSummary {
     .filter((r) => r.cost_eur != null)
     .map((r) => ({ userId: r.user_id, amountEur: r.cost_eur as number, type: 'shared' as EntryType }));
 
-  // --- Saldo combinado (gasolina + otros + lavados − pagos) ---
+  // --- Incidencias: SOLO las resueltas con importe cuentan (resolver = ya se pagó o se reparó).
+  // Una abierta, aunque tenga importe previsto, no mueve el saldo: nadie ha puesto el dinero.
+  // El reparto individual se expresa con `payerShareEur` (la misma palanca que los pagos):
+  // si el responsable es el pagador, lo asume entero; si no, lo asume el otro por completo.
+  const incidentRows = listIncidentRows();
+  const incidentEntries = incidentRows
+    .filter((r) => r.status === 'resolved' && r.amount_eur != null && r.paid_by != null)
+    .map((r) => ({
+      userId: r.paid_by as number,
+      amountEur: r.amount_eur as number,
+      type: 'shared' as EntryType,
+      payerShareEur:
+        r.type === 'individual'
+          ? r.responsible_user_id === r.paid_by
+            ? (r.amount_eur as number)
+            : 0
+          : undefined,
+    }));
+  const incidentTotalPerUser = totalsWithUser(
+    computeBalance(incidentEntries, userA.id, userB.id).totalPerUser,
+  );
+  const openIncidents = incidentRows.filter((r) => r.status === 'open');
+  const pendingAmountEur = round2(
+    openIncidents.reduce((sum, r) => sum + (r.amount_eur ?? 0), 0),
+  );
+
+  // --- Saldo combinado (gasolina + otros + lavados + incidencias resueltas − pagos) ---
   const balanceRaw = computeBalance(
-    [...fuelEntries, ...otherEntries, ...washEntries, ...settlementEntries],
+    [...fuelEntries, ...otherEntries, ...washEntries, ...incidentEntries, ...settlementEntries],
     userA.id,
     userB.id,
   );
@@ -341,6 +379,12 @@ export function getExpenses(): ExpensesSummary {
     // `fuel.balance` se mantiene como alias del balance combinado para clientes antiguos (ver interface).
     fuel: { list: fuelList, totalPerUser: fuelTotalPerUser, balance },
     other: { list: otherList, totalPerUser: otherTotalPerUser },
+    incidents: {
+      list: listIncidents(),
+      openCount: openIncidents.length,
+      pendingAmountEur,
+      totalPerUser: incidentTotalPerUser,
+    },
     settlements: { list: settlementList },
     balance,
     wash: {

@@ -291,6 +291,173 @@ describe('gastos: gasolina (balance) y lavado (alternancia)', () => {
   });
 });
 
+// Estado de partida heredado del bloque anterior: Dennis (user2) debe 11 € a Andy (user1), sin
+// pagos. Este describe DEJA ese mismo estado al terminar (borra sus incidencias), porque los
+// describes siguientes cuentan con él.
+describe('incidencias (multas, golpes, averías)', () => {
+  let incidentId = 0;
+
+  it('una incidencia sin importe se registra y NO mueve el saldo', async () => {
+    const created = await api('POST', '/api/incidents', {
+      token: user1Token,
+      body: {
+        date: '2026-07-28',
+        kind: 'damage',
+        description: 'Rayada puerta trasera en el parking',
+        type: 'shared',
+      },
+    });
+    expect(created.status).toBe(201);
+    expect(data(created).status).toBe('open');
+    expect(data(created).amountEur).toBeNull();
+    expect(data(created).reportedBy.profile).toBe('user1');
+    expect(data(created).paidBy).toBeNull();
+    incidentId = data(created).id as number;
+
+    const exp = await api('GET', '/api/expenses', { token: user1Token });
+    expect(data(exp).incidents.openCount).toBe(1);
+    expect(data(exp).incidents.pendingAmountEur).toBe(0);
+    expect(data(exp).balance.amountEur).toBe(11); // sin cambios
+  });
+
+  it('ponerle importe al editarla sigue sin mover el saldo (solo es una previsión)', async () => {
+    const patched = await api('PATCH', `/api/incidents/${incidentId}`, {
+      token: user2Token,
+      body: { amountEur: 90 },
+    });
+    expect(patched.status).toBe(200);
+    expect(data(patched).amountEur).toBe(90);
+    expect(data(patched).status).toBe('open');
+
+    const exp = await api('GET', '/api/expenses', { token: user1Token });
+    expect(data(exp).incidents.pendingAmountEur).toBe(90);
+    expect(data(exp).balance.amountEur).toBe(11); // sigue sin contar
+  });
+
+  it('resolverla la mete en el saldo una sola vez; resolver de nuevo → 409', async () => {
+    // La paga Andy y es compartida → Dennis asume 45 más.
+    const resolved = await api('PATCH', `/api/incidents/${incidentId}/resolve`, {
+      token: user1Token,
+      body: {},
+    });
+    expect(resolved.status).toBe(200);
+    expect(data(resolved).status).toBe('resolved');
+    expect(data(resolved).paidBy.profile).toBe('user1');
+    expect(data(resolved).resolvedAt).not.toBeNull();
+
+    const exp = await api('GET', '/api/expenses', { token: user1Token });
+    expect(data(exp).incidents.openCount).toBe(0);
+    expect(data(exp).incidents.pendingAmountEur).toBe(0);
+    expect(data(exp).balance.fromUser.profile).toBe('user2');
+    expect(data(exp).balance.amountEur).toBe(56); // 11 + 45
+
+    const again = await api('PATCH', `/api/incidents/${incidentId}/resolve`, {
+      token: user2Token,
+      body: {},
+    });
+    expect(again.status).toBe(409);
+    expect(code(again)).toBe('INVALID_TRANSITION');
+  });
+
+  it('reabrirla saca su importe del saldo', async () => {
+    const reopened = await api('PATCH', `/api/incidents/${incidentId}/reopen`, {
+      token: user2Token,
+    });
+    expect(reopened.status).toBe(200);
+    expect(data(reopened).status).toBe('open');
+    expect(data(reopened).paidBy).toBeNull();
+
+    const exp = await api('GET', '/api/expenses', { token: user1Token });
+    expect(data(exp).balance.amountEur).toBe(11);
+
+    const again = await api('PATCH', `/api/incidents/${incidentId}/reopen`, { token: user1Token });
+    expect(again.status).toBe(409);
+  });
+
+  it('individual: si la paga quien NO la generó, el responsable asume el importe íntegro', async () => {
+    // Multa de Dennis (responsable) que paga Andy → Dennis le debe los 60 € enteros.
+    const users = data(await api('GET', '/api/users')) as { id: number; profile: string }[];
+    const dennis = users.find((u) => u.profile === 'user2')!;
+    const created = await api('POST', '/api/incidents', {
+      token: user1Token,
+      body: {
+        date: '2026-07-20',
+        kind: 'fine',
+        description: 'Multa zona azul',
+        amountEur: 60,
+        type: 'individual',
+        responsibleUserId: dennis.id,
+      },
+    });
+    expect(created.status).toBe(201);
+    expect(data(created).responsible.profile).toBe('user2');
+    const fineId = data(created).id as number;
+
+    await api('PATCH', `/api/incidents/${fineId}/resolve`, { token: user1Token, body: {} });
+    const exp = await api('GET', '/api/expenses', { token: user1Token });
+    expect(data(exp).balance.fromUser.profile).toBe('user2');
+    expect(data(exp).balance.amountEur).toBe(71); // 11 + 60 enteros
+
+    // Y borrarla revierte el efecto.
+    const del = await api('DELETE', `/api/incidents/${fineId}`, { token: user2Token });
+    expect(del.status).toBe(200);
+    expect(data(await api('GET', '/api/expenses', { token: user1Token })).balance.amountEur).toBe(11);
+  });
+
+  it('individual asumido por quien lo paga: no genera deuda', async () => {
+    const created = await api('POST', '/api/incidents', {
+      token: user1Token,
+      body: {
+        date: '2026-07-21',
+        kind: 'breakdown',
+        description: 'Bombilla fundida',
+        amountEur: 25,
+        type: 'individual',
+      },
+    });
+    const id = data(created).id as number;
+    // Sin responsableUserId, lo asume quien la registró (Andy), que es quien la resuelve/paga.
+    expect(data(created).responsible.profile).toBe('user1');
+
+    await api('PATCH', `/api/incidents/${id}/resolve`, { token: user1Token, body: {} });
+    expect(data(await api('GET', '/api/expenses', { token: user1Token })).balance.amountEur).toBe(11);
+
+    await api('DELETE', `/api/incidents/${id}`, { token: user1Token });
+  });
+
+  it('rechaza cuerpos inválidos y exige sesión', async () => {
+    for (const body of [
+      { date: '2026-07-28', kind: 'damage', description: '   ', type: 'shared' },
+      { date: '2026-07-28', kind: 'ovni', description: 'x', type: 'shared' },
+      { date: 'no-fecha', kind: 'damage', description: 'x', type: 'shared' },
+      { date: '2026-07-28', kind: 'damage', description: 'x', type: 'shared', amountEur: -1 },
+      { date: '2026-07-28', kind: 'damage', description: 'x', type: 'shared', amountEur: 1e999 },
+    ]) {
+      const r = await api('POST', '/api/incidents', { token: user1Token, body });
+      expect(r.status).toBe(400);
+      expect(code(r)).toBe('VALIDATION_ERROR');
+    }
+    // PATCH vacío tampoco vale.
+    expect(
+      (await api('PATCH', `/api/incidents/${incidentId}`, { token: user1Token, body: {} })).status,
+    ).toBe(400);
+
+    expect((await api('GET', '/api/incidents')).status).toBe(401);
+    expect((await api('POST', '/api/incidents', { body: {} })).status).toBe(401);
+    expect((await api('DELETE', `/api/incidents/${incidentId}`)).status).toBe(401);
+  });
+
+  it('limpia el estado para los describes siguientes', async () => {
+    const list = data(await api('GET', '/api/incidents', { token: user1Token })) as { id: number }[];
+    for (const incident of list) {
+      await api('DELETE', `/api/incidents/${incident.id}`, { token: user1Token });
+    }
+    const exp = await api('GET', '/api/expenses', { token: user1Token });
+    expect(data(exp).incidents.list).toHaveLength(0);
+    expect(data(exp).balance.amountEur).toBe(11); // el estado heredado, intacto
+  });
+});
+
 describe('gasolina: preview del reparto por km', () => {
   it('GET /api/fuel/preview reparte el importe y coacciona el query', async () => {
     // Hay un repostaje previo a odómetro 200; pedimos preview a odómetro 250 (ventana 200→250).
@@ -741,11 +908,16 @@ describe('planes de kilometraje (ajuste del cupo con fecha de efecto)', () => {
     }
   });
 
-  it('el reset de admin NO borra los planes (es configuración, como rules)', async () => {
+  it('el reset de admin NO borra los planes (es configuración) pero SÍ las incidencias', async () => {
     clearPlans();
     await api('POST', '/api/mileage/plans', {
       token: user1Token,
       body: { annualKmTotal: 25000, monthlyFeeEur: 425 },
+    });
+    // Una incidencia es dato transaccional: el reset debe llevársela, o dejaría saldo fantasma.
+    await api('POST', '/api/incidents', {
+      token: user1Token,
+      body: { date: '2026-07-28', kind: 'other', description: 'Se borra en el reset', type: 'shared' },
     });
 
     const reset = await api('POST', '/api/admin/reset', {
@@ -753,9 +925,11 @@ describe('planes de kilometraje (ajuste del cupo con fecha de efecto)', () => {
       body: { initialKm: 1000, password: 'Pass4admin' },
     });
     expect(reset.status).toBe(200);
+    expect(data(reset).clearedTables).toContain('incidents');
 
     const r = await api('GET', '/api/mileage/plans', { token: user1Token });
     expect(data(r).scheduled.annualKmTotal).toBe(25000);
+    expect(data(await api('GET', '/api/incidents', { token: user1Token }))).toHaveLength(0);
 
     clearPlans();
   });

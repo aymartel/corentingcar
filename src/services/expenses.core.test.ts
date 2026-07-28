@@ -113,6 +113,39 @@ describe('computeBalance', () => {
   });
 });
 
+describe('incidencias: mapeo del reparto al saldo', () => {
+  // Las incidencias no añaden lógica al core: se traducen a BalanceEntry en expenses.service.
+  // Estos casos fijan esa traducción (ver la tabla del plan `plan/incidencias.md`).
+  it('compartida: la paga A → B le debe la mitad', () => {
+    const bal = computeBalance([{ userId: A, amountEur: 90, type: 'shared' }], A, B);
+    expect(bal.fromUserId).toBe(B);
+    expect(bal.amountEur).toBe(45);
+  });
+
+  it('individual y el responsable ES quien paga → sin deuda', () => {
+    // payerShareEur = importe entero: el pagador lo asume todo.
+    const bal = computeBalance(
+      [{ userId: A, amountEur: 60, type: 'shared', payerShareEur: 60 }],
+      A,
+      B,
+    );
+    expect(bal.settled).toBe(true);
+    expect(bal.amountEur).toBe(0);
+  });
+
+  it('individual y el responsable NO es quien paga → le debe el importe íntegro', () => {
+    // payerShareEur = 0: el pagador no asume nada, el otro asume todo (multa de B que paga A).
+    const bal = computeBalance(
+      [{ userId: A, amountEur: 60, type: 'shared', payerShareEur: 0 }],
+      A,
+      B,
+    );
+    expect(bal.fromUserId).toBe(B);
+    expect(bal.toUserId).toBe(A);
+    expect(bal.amountEur).toBe(60);
+  });
+});
+
 describe('splitFuelByKm', () => {
   it('reparte proporcional a los km', () => {
     const s = splitFuelByKm(100, 30, 70);

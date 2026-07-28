@@ -37,6 +37,7 @@ import { handoverRouter } from './handover.routes.js';
 import { usageRouter } from './usage.routes.js';
 import { usageChangesRouter } from './usage-changes.routes.js';
 import { requestsRouter } from './requests.routes.js';
+import { incidentsRouter } from './incidents.routes.js';
 import { requireAuth } from '../middlewares/require-auth.js';
 import { validate } from '../middlewares/validate.js';
 import { monthSchema } from '../utils/validation.js';
@@ -70,6 +71,7 @@ apiRouter.post('/washes', requireAuth, validate(createWashSchema), createWashCon
 apiRouter.post('/other-expenses', requireAuth, validate(createOtherExpenseSchema), createOtherExpenseController);
 apiRouter.post('/settlements', requireAuth, validate(createSettlementSchema), createSettlementController);
 apiRouter.delete('/settlements/:id', requireAuth, deleteSettlementController);
+apiRouter.use('/incidents', requireAuth, incidentsRouter);
 apiRouter.get('/expenses', requireAuth, getExpensesController);
 apiRouter.use('/requests', requireAuth, requestsRouter);
 

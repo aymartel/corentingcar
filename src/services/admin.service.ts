@@ -35,6 +35,7 @@ export function resetAllData(userId: number, initialKm: number): ResetResult {
     'wash_logs',
     'other_expense_logs',
     'settlements',
+    'incidents',
   ];
 
   const run = db.transaction(() => {
@@ -46,6 +47,7 @@ export function resetAllData(userId: number, initialKm: number): ResetResult {
     db.prepare('DELETE FROM wash_logs').run();
     db.prepare('DELETE FROM other_expense_logs').run();
     db.prepare('DELETE FROM settlements').run();
+    db.prepare('DELETE FROM incidents').run();
 
     // Línea base del odómetro: coche recibido a `initialKm` (uso de 0 km).
     db.prepare(

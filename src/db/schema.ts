@@ -204,4 +204,37 @@ CREATE TABLE IF NOT EXISTS mileage_plans (
   created_by_user_id INTEGER,
   created_at         TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Incidencias del coche (multas, golpes, averías...). A diferencia de other_expense_logs, una
+-- incidencia PASA un día y puede no tener importe todavía (la multa aún no ha llegado, el golpe
+-- no está presupuestado); queda ABIERTA hasta que se paga o se repara. Importan al final del
+-- contrato de renting, cuando se revisa el estado del coche.
+-- El coste entra en el saldo SOLO al resolverla (resolver = ya se pagó o ya se reparó), y lo hace
+-- a nombre de paid_by. amount_eur es nullable (mismo precedente que wash_logs.cost_eur).
+-- Tres personas distintas: reported_by (quien la registró), responsible_user_id (quien ASUME el
+-- coste si el reparto es individual) y paid_by (quien PUSO el dinero, se fija al resolver).
+CREATE TABLE IF NOT EXISTS incidents (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  reported_by         INTEGER NOT NULL REFERENCES users(id),
+  date                TEXT NOT NULL,
+  kind                TEXT NOT NULL CHECK (kind IN ('fine','damage','breakdown','other')),
+  description         TEXT NOT NULL,
+  amount_eur          REAL CHECK (amount_eur IS NULL OR amount_eur >= 0),
+  type                TEXT NOT NULL DEFAULT 'shared' CHECK (type IN ('individual','shared')),
+  responsible_user_id INTEGER REFERENCES users(id),
+  status              TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','resolved')),
+  paid_by             INTEGER REFERENCES users(id),
+  resolved_at         TEXT,
+  created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+  -- Una resuelta CON importe siempre tiene pagador: es lo que la mete en el saldo.
+  CHECK (status = 'open' OR amount_eur IS NULL OR paid_by IS NOT NULL),
+  -- paid_by y resolved_at solo existen si está resuelta.
+  CHECK (status = 'resolved' OR (paid_by IS NULL AND resolved_at IS NULL)),
+  -- Un reparto individual SIEMPRE tiene responsable. Sin esto, editar una incidencia a
+  -- 'individual' dejando el responsable a NULL haría que "responsable != pagador" fuese cierto
+  -- por accidente y el OTRO asumiría el importe íntegro, en silencio.
+  CHECK (type = 'shared' OR responsible_user_id IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS idx_incidents_date ON incidents(date);
+CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status);
 `;

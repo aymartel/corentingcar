@@ -109,6 +109,50 @@ export const openapiDocument = {
           costEur: { type: 'number', nullable: true, example: 12 },
         },
       },
+      IncidentCreate: {
+        type: 'object',
+        required: ['date', 'kind', 'description', 'type'],
+        properties: {
+          date: { type: 'string', format: 'date', example: '2026-07-28' },
+          kind: {
+            type: 'string',
+            enum: ['fine', 'damage', 'breakdown', 'other'],
+            example: 'damage',
+          },
+          description: { type: 'string', maxLength: 200, example: 'Rayada puerta trasera' },
+          amountEur: {
+            type: 'number',
+            nullable: true,
+            description: 'Opcional: puede registrarse sin saber aún el coste.',
+            example: 340,
+          },
+          type: { type: 'string', enum: ['individual', 'shared'], example: 'shared' },
+          responsibleUserId: {
+            type: 'integer',
+            description: 'Quién ASUME el coste si el reparto es individual. Por defecto, quien la registra.',
+          },
+        },
+      },
+      IncidentUpdate: {
+        type: 'object',
+        description: 'Edición parcial: al menos un campo. `amountEur: null` borra el importe.',
+        properties: {
+          date: { type: 'string', format: 'date' },
+          kind: { type: 'string', enum: ['fine', 'damage', 'breakdown', 'other'] },
+          description: { type: 'string', maxLength: 200 },
+          amountEur: { type: 'number', nullable: true },
+          type: { type: 'string', enum: ['individual', 'shared'] },
+          responsibleUserId: { type: 'integer' },
+        },
+      },
+      IncidentResolve: {
+        type: 'object',
+        description: 'Marca la incidencia como pagada/reparada: es cuando entra en el saldo.',
+        properties: {
+          paidBy: { type: 'integer', description: 'Quién puso el dinero. Por defecto, quien resuelve.' },
+          amountEur: { type: 'number', description: 'Importe final, si difiere del previsto.' },
+        },
+      },
       OtherExpenseCreate: {
         type: 'object',
         required: ['date', 'amountEur', 'type', 'description'],
@@ -397,6 +441,92 @@ export const openapiDocument = {
         responses: { '201': { description: 'Lavado' }, '400': errorResponse, '401': errorResponse },
       },
     },
+    '/api/incidents': {
+      get: {
+        tags: ['Gastos'],
+        summary: 'Incidencias del coche (multas, golpes, averías), abiertas primero',
+        parameters: [
+          {
+            name: 'status',
+            in: 'query',
+            required: false,
+            schema: { type: 'string', enum: ['open', 'resolved'] },
+          },
+        ],
+        responses: { '200': { description: 'Incidencias' }, '401': errorResponse },
+      },
+      post: {
+        tags: ['Gastos'],
+        summary: 'Registrar una incidencia (nace ABIERTA; el importe es opcional)',
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/IncidentCreate' } } },
+        },
+        responses: {
+          '201': { description: 'Incidencia' },
+          '400': errorResponse,
+          '401': errorResponse,
+        },
+      },
+    },
+    '/api/incidents/{id}': {
+      patch: {
+        tags: ['Gastos'],
+        summary: 'Editar una incidencia (p.ej. ponerle el importe cuando llega la multa)',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/IncidentUpdate' } } },
+        },
+        responses: {
+          '200': { description: 'Incidencia' },
+          '400': errorResponse,
+          '401': errorResponse,
+          '404': errorResponse,
+        },
+      },
+      delete: {
+        tags: ['Gastos'],
+        summary: 'Eliminar una incidencia (si estaba resuelta, su importe sale del saldo)',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+        responses: {
+          '200': { description: 'Eliminada' },
+          '401': errorResponse,
+          '404': errorResponse,
+        },
+      },
+    },
+    '/api/incidents/{id}/resolve': {
+      patch: {
+        tags: ['Gastos'],
+        summary: 'Marcar como resuelta (ya pagada o reparada): su importe entra en el saldo',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+        requestBody: {
+          required: false,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/IncidentResolve' } } },
+        },
+        responses: {
+          '200': { description: 'Incidencia' },
+          '400': errorResponse,
+          '401': errorResponse,
+          '404': errorResponse,
+          '409': errorResponse,
+        },
+      },
+    },
+    '/api/incidents/{id}/reopen': {
+      patch: {
+        tags: ['Gastos'],
+        summary: 'Volver a abrirla: su importe SALE del saldo',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+        responses: {
+          '200': { description: 'Incidencia' },
+          '401': errorResponse,
+          '404': errorResponse,
+          '409': errorResponse,
+        },
+      },
+    },
     '/api/other-expenses': {
       post: {
         tags: ['Gastos'],
@@ -430,7 +560,9 @@ export const openapiDocument = {
     '/api/expenses': {
       get: {
         tags: ['Gastos'],
-        summary: 'Resumen: balance combinado (gasolina + otros − pagos) + último/próximo lavado',
+        summary:
+          'Resumen: balance combinado (gasolina + otros + lavados + incidencias resueltas − pagos), ' +
+          'incidencias con su contador de abiertas, y último/próximo lavado',
         responses: { '200': { description: 'Gastos' }, '401': errorResponse },
       },
     },
